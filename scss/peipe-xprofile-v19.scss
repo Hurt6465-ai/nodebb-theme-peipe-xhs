@@ -669,4 +669,351 @@
     font-size: 14px;
     font-weight: 700;
   }
+
+  @media (max-width: 768px) {
+  .pxp19-review-original-hidden {
+    display: none !important;
+  }
+
+  .pxp19-review-panel {
+    padding: 0 0 96px 0;
+  }
+
+  .pxp19-review-summary {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 18px;
+    margin-bottom: 14px;
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .pxp19-review-score {
+    font-size: 44px;
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: -0.06em;
+    color: #2f3542;
+  }
+
+  .pxp19-review-summary-right {
+    min-width: 0;
+  }
+
+  .pxp19-review-stars,
+  .pxp19-review-input-stars,
+  .pxp19-review-mini-stars {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .pxp19-star {
+    border: 0;
+    background: transparent;
+    color: #d1d5db;
+    font-size: 22px;
+    line-height: 1;
+    padding: 0 1px;
+  }
+
+  .pxp19-star.active {
+    color: #ffb000;
+  }
+
+  .pxp19-review-mini-stars .pxp19-star {
+    font-size: 12px;
+    pointer-events: none;
+  }
+
+  .pxp19-review-count {
+    margin-top: 6px;
+    color: #6b7280;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .pxp19-review-form {
+    padding: 18px;
+    margin-bottom: 14px;
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .pxp19-review-form-title {
+    font-size: 16px;
+    font-weight: 900;
+    color: #2f3542;
+    margin-bottom: 12px;
+  }
+
+  .pxp19-review-input-stars {
+    margin-bottom: 12px;
+  }
+
+  .pxp19-review-input-stars .pxp19-star {
+    font-size: 28px;
+  }
+
+  .pxp19-review-textarea {
+    width: 100%;
+    min-height: 92px;
+    border: 1px solid #edf0f5;
+    border-radius: 16px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    outline: none;
+    resize: vertical;
+    background: #fafafa;
+  }
+
+  .pxp19-review-textarea:focus {
+    border-color: rgba(255, 36, 66, 0.32);
+    background: #fff;
+  }
+
+  .pxp19-review-submit {
+    width: 100%;
+    height: 42px;
+    margin-top: 12px;
+    border: 0;
+    border-radius: 999px;
+    background: #ff2442;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 900;
+    box-shadow: 0 8px 20px rgba(255, 36, 66, 0.18);
+  }
+
+  .pxp19-review-item {
+    display: flex;
+    gap: 10px;
+    padding: 14px;
+    margin-bottom: 10px;
+    border-radius: 20px;
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .pxp19-review-avatar {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: linear-gradient(135deg, #ff2442, #7c3aed);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+  }
+
+  .pxp19-review-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .pxp19-review-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .pxp19-review-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 14px;
+    color: #2f3542;
+  }
+
+  .pxp19-review-text {
+    margin-top: 6px;
+    color: #374151;
+    font-size: 14px;
+    line-height: 1.6;
+    word-break: break-word;
+  }
+
+  .pxp19-review-time {
+    margin-top: 6px;
+    color: #9ca3af;
+    font-size: 12px;
+  }
+
+  .pxp19-review-empty,
+  .pxp19-review-loading {
+    min-height: 96px;
+    border-radius: 20px;
+    background: #fafafa;
+    border: 1px solid #f0f0f0;
+    color: #8b8f98;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 14px;
+  }
+
+  #pxp19-partner-editor-mask {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: rgba(0, 0, 0, 0.38);
+    display: none;
+    backdrop-filter: blur(8px);
+  }
+
+  #pxp19-partner-editor-mask.show {
+    display: block;
+  }
+
+  #pxp19-partner-editor {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100001;
+    max-height: 88vh;
+    background: linear-gradient(180deg, #fff, #f8f9fc);
+    border-radius: 28px 28px 0 0;
+    display: none;
+    overflow: hidden;
+    box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.24);
+  }
+
+  #pxp19-partner-editor.show {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pxp19-editor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 18px 10px 18px;
+  }
+
+  .pxp19-editor-title {
+    font-size: 20px;
+    font-weight: 900;
+    color: #111827;
+  }
+
+  .pxp19-editor-close {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 50%;
+    background: #f1f2f5;
+    color: #444;
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .pxp19-editor-body {
+    overflow-y: auto;
+    padding: 0 18px 14px 18px;
+  }
+
+  .pxp19-editor-tip {
+    margin: 4px 0 12px 0;
+    padding: 10px 12px;
+    border-radius: 16px;
+    background: #fff1f4;
+    color: #ff2442;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .pxp19-editor-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .pxp19-editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .pxp19-editor-field-full {
+    grid-column: 1 / -1;
+  }
+
+  .pxp19-editor-field span {
+    color: #4b5563;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .pxp19-editor-field input,
+  .pxp19-editor-field select,
+  .pxp19-editor-field textarea {
+    width: 100%;
+    border: 1px solid #edf0f5;
+    border-radius: 16px;
+    background: #fff;
+    padding: 12px 13px;
+    color: #111827;
+    font-size: 14px;
+    font-weight: 700;
+    outline: none;
+  }
+
+  .pxp19-editor-field textarea {
+    resize: vertical;
+    line-height: 1.6;
+  }
+
+  .pxp19-editor-field input:focus,
+  .pxp19-editor-field select:focus,
+  .pxp19-editor-field textarea:focus {
+    border-color: rgba(255, 36, 66, 0.36);
+  }
+
+  .pxp19-editor-actions {
+    display: flex;
+    gap: 10px;
+    padding: 12px 18px calc(12px + env(safe-area-inset-bottom)) 18px;
+    background: rgba(255, 255, 255, 0.94);
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .pxp19-editor-cancel,
+  .pxp19-editor-save {
+    flex: 1;
+    height: 44px;
+    border: 0;
+    border-radius: 999px;
+    font-size: 15px;
+    font-weight: 900;
+  }
+
+  .pxp19-editor-cancel {
+    background: #f3f4f6;
+    color: #374151;
+  }
+
+  .pxp19-editor-save {
+    background: #ff2442;
+    color: #fff;
+  }
+
+  .pxp19-editor-loading {
+    padding: 40px 0;
+    color: #8b8f98;
+    text-align: center;
+    font-weight: 800;
+  }
 }
