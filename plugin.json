@@ -12,6 +12,7 @@
 	],
 	"scripts": [
 		"public/harmony.js"
+	    "public/peipe-profile.js"
 	],
 	"modules": {
 		"../admin/plugins/harmony.js": "public/admin.js",
