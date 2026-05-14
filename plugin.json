@@ -11,7 +11,7 @@
 		{ "hook": "filter:middleware.renderHeader", "method": "filterMiddlewareRenderHeader" }
 	],
 	"scripts": [
-		"public/harmony.js"
+		"public/harmony.js",
 	    "public/peipe-profile.js"
 	],
 	"modules": {
