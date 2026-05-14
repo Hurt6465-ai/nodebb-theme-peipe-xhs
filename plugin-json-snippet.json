@@ -1,0 +1,12 @@
+{
+  "scripts": [
+    "public/harmony.js",
+    "public/peipe-xprofile-v19.js"
+  ],
+  "scss": [
+    "scss/peipe-xprofile-v19.scss"
+  ],
+  "staticDirs": {
+    "peipe-xprofile-v19": "public/peipe-xprofile-v19"
+  }
+}
