@@ -1153,3 +1153,54 @@
     font-weight: 900;
   }
 }
+
+
+@media (max-width: 768px) {
+  .pxp19-country-line {
+    display: none !important;
+  }
+
+  .pxp19-review-tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  .pxp19-review-input-translate,
+  .pxp19-review-translate {
+    border: 0;
+    border-radius: 999px;
+    background: #f3f4f6;
+    color: #4b5563;
+    font-size: 12px;
+    font-weight: 900;
+    padding: 7px 10px;
+    line-height: 1;
+  }
+
+  .pxp19-review-input-translate {
+    flex: 0 0 auto;
+    background: #fff1f4;
+    color: #ff2442;
+  }
+
+  .pxp19-review-translate {
+    margin-top: 7px;
+  }
+
+  .pxp19-review-translated {
+    margin-top: 7px;
+    padding: 9px 10px;
+    border-radius: 12px;
+    background: #f8fafc;
+    color: #374151;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .pxp19-star[aria-hidden="true"] {
+    display: inline-block;
+  }
+}
