@@ -12,7 +12,7 @@
   ],
   "scripts": [
     "public/harmony.js",
-    "public/peipe-profile/peipe-profile.js"
+    "public/peipe-profile.js"
   ],
   "scss": [
     "scss/peipe-profile.scss"
