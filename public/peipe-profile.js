@@ -24,7 +24,6 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
 
   const PROFILE_ASSETS = Object.assign({
-    cssUrl: '/plugins/nodebb-theme-harmony/peipe-profile/peipe-profile.css',
     i18nBaseUrl: '/plugins/nodebb-theme-peipe-xhs/peipe-profile/i18n/',
     i18nDefault: 'zh-CN',
     imageConfig: {
@@ -45,7 +44,45 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     }
   }, window.PEIPE_PROFILE_CONFIG || {});
 
-  let profileText = {};
+  const DEFAULT_PROFILE_TEXT = {
+    review: '评价',
+    notes: '笔记',
+    followingCount: '关注',
+    followers: '粉丝',
+    views: '浏览',
+    editProfile: '编辑资料',
+    backHome: '返回主页',
+    chat: '聊天',
+    follow: '关注',
+    following: '已关注',
+    more: '更多',
+    settings: '设置',
+    themeSettings: '主题设置',
+    uploadAvatar: '上传头像',
+    uploadCover: '上传背景',
+    resizeCover: '调整背景',
+    removeCover: '移除背景',
+    accountInfo: '账号信息',
+    muteAccount: '禁言账号',
+    unmuteAccount: '解除禁言',
+    banAccount: '封禁账号',
+    unbanAccount: '解除封禁',
+    deleteAccount: '删除账号',
+    deleteContent: '删除内容',
+    deleteAll: '删除账号和内容',
+    reportProfile: '举报资料',
+    reported: '已举报',
+    blockUser: '屏蔽用户',
+    unblockUser: '解除屏蔽',
+    ageSuffix: '岁',
+    compressing: '正在压缩图片...',
+    uploading: '上传中...',
+    notesLoading: '正在加载笔记...',
+    notesEmpty: '还没有笔记',
+    noteOpen: '打开笔记'
+  };
+
+  let profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_PROFILE_TEXT || {});
   let profileI18nPromise = null;
   let profileAssetsReady = false;
   let uploadCompressionInstalled = false;
@@ -57,19 +94,22 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   }
 
   function ensureExternalCss() {
-    if (document.querySelector('link[data-peipe-profile-css]')) return;
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = rel(PROFILE_ASSETS.cssUrl);
-    link.setAttribute('data-peipe-profile-css', '1');
-    document.head.appendChild(link);
+    // CSS is compiled by plugin.json -> scss/peipe-profile.scss. Do not inject a second CSS link.
+    return;
   }
 
   function getLocaleCandidates() {
-    const raw = String((window.config && window.config.userLang) || document.documentElement.lang || navigator.language || PROFILE_ASSETS.i18nDefault || 'zh-CN');
-    const short = raw.split('-')[0];
+    const raw = String(
+      (window.config && (window.config.userLang || window.config.language)) ||
+      document.documentElement.lang ||
+      navigator.language ||
+      PROFILE_ASSETS.i18nDefault ||
+      'zh-CN'
+    );
+    const normalized = raw.replace('_', '-');
+    const short = normalized.split('-')[0];
     const out = [];
-    [raw, raw.replace('_', '-'), short, PROFILE_ASSETS.i18nDefault, 'zh-CN'].forEach(function (item) {
+    [normalized, raw, short, PROFILE_ASSETS.i18nDefault, 'zh-CN', 'zh', 'en-US', 'en'].forEach(function (item) {
       item = String(item || '').trim();
       if (item && out.indexOf(item) === -1) out.push(item);
     });
@@ -82,17 +122,23 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     let chain = Promise.reject(new Error('start'));
     candidates.forEach(function (locale) {
       chain = chain.catch(function () {
-        return fetch(rel(PROFILE_ASSETS.i18nBaseUrl + locale + '.json'), { credentials: 'same-origin', cache: 'force-cache' })
-          .then(function (res) { if (!res.ok) throw new Error('i18n ' + res.status); return res.json(); });
+        const cacheKey = (window.config && (window.config['cache-buster'] || window.config.cacheBuster)) || Date.now();
+        return fetch(rel(PROFILE_ASSETS.i18nBaseUrl + locale + '.json?v=' + cacheKey), {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        }).then(function (res) {
+          if (!res.ok) throw new Error('i18n ' + locale + ' ' + res.status);
+          return res.json();
+        });
       });
     });
     profileI18nPromise = chain.then(function (json) {
-      profileText = json || {};
+      profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_PROFILE_TEXT || {}, json || {});
       profileAssetsReady = true;
       return profileText;
     }).catch(function (err) {
-      console.warn('[peipe-profile] i18n load failed', err);
-      profileText = window.PEIPE_PROFILE_TEXT || {};
+      console.warn('[peipe-profile] i18n load failed, using built-in zh-CN fallback', err);
+      profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_PROFILE_TEXT || {});
       profileAssetsReady = true;
       return profileText;
     });
@@ -102,6 +148,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   function T(key, vars) {
     let value = profileText && profileText[key];
     if (!value && window.PEIPE_PROFILE_TEXT) value = window.PEIPE_PROFILE_TEXT[key];
+    if (!value) value = DEFAULT_PROFILE_TEXT[key];
     value = value || key;
     if (vars) {
       Object.keys(vars).forEach(function (name) {
@@ -1186,6 +1233,10 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     const section = getCurrentSection();
     const editable = isEditableSection();
 
+    if (section === 'topics') {
+      renderNotesSection(dom);
+    }
+
     if (!editable) {
       dom.$accountContent.children('.d-flex.justify-content-between.align-items-center.mb-3').addClass('xhs-hidden');
     }
@@ -1205,6 +1256,119 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     }
 
     dom.$stats.find('.card').addClass('xhs-about-card');
+  }
+
+  function renderNotesSection(dom) {
+    if (getCurrentSection() !== 'topics') return;
+    const $content = dom.$accountContent;
+    if (!$content.length || $content.find('.xhs-notes-grid').length) return;
+
+    const notes = collectNotesFromDom($content);
+    $content.children().not('.xhs-injected').addClass('xhs-notes-original-hidden');
+
+    const $grid = $('<div class="xhs-notes-grid xhs-injected" aria-live="polite"></div>');
+    $content.append($grid);
+
+    if (notes.length) {
+      renderNotes($grid, notes);
+      return;
+    }
+
+    $grid.html('<div class="xhs-notes-empty">' + esc(T('notesLoading')) + '</div>');
+    fetchNotesFromApi().then(function (apiNotes) {
+      if (apiNotes && apiNotes.length) renderNotes($grid, apiNotes);
+      else $grid.html('<div class="xhs-notes-empty">' + esc(T('notesEmpty')) + '</div>');
+    }).catch(function () {
+      $grid.html('<div class="xhs-notes-empty">' + esc(T('notesEmpty')) + '</div>');
+    });
+  }
+
+  function collectNotesFromDom($content) {
+    const seen = {};
+    const notes = [];
+
+    $content.find('a[href*="/topic/"]').each(function () {
+      const $a = $(this);
+      const href = $a.attr('href') || '';
+      if (!href || seen[href]) return;
+      let title = norm($a.text());
+      if (!title || title.length < 2) return;
+
+      const $row = $a.closest('li, [component="category/topic"], [component="topic"], .topic-row, .category-item, .card, .row');
+      let excerpt = '';
+      if ($row.length) {
+        excerpt = norm($row.find('.teaser-content, .topic-teaser, .description, [component="post/content"], .content').first().text());
+        if (!excerpt) {
+          const rowText = norm($row.text());
+          excerpt = rowText.replace(title, '').replace(/\d+\s*(回复|浏览|views|posts)/ig, '').trim();
+        }
+      }
+
+      let image = '';
+      $row.find('img').each(function () {
+        const src = $(this).attr('src') || $(this).attr('data-src') || '';
+        const cls = String($(this).attr('class') || '');
+        if (!src || /avatar|user|emoji|icon/i.test(cls + ' ' + src)) return;
+        image = src;
+        return false;
+      });
+
+      seen[href] = true;
+      notes.push({ href: href, title: title, excerpt: excerpt, image: image });
+    });
+
+    return notes.slice(0, 60);
+  }
+
+  function fetchNotesFromApi() {
+    const slug = getViewedSlug();
+    if (!slug) return Promise.resolve([]);
+    return fetch(rel('/api/user/' + encodeURIComponent(slug) + '/topics'), {
+      credentials: 'same-origin',
+      cache: 'no-store'
+    }).then(function (res) {
+      if (!res.ok) throw new Error('topics ' + res.status);
+      return res.json();
+    }).then(function (json) {
+      const data = json && (json.topics || json.posts || json.response && (json.response.topics || json.response.posts) || []);
+      return normalizeApiNotes(Array.isArray(data) ? data : []);
+    });
+  }
+
+  function normalizeApiNotes(items) {
+    return items.map(function (item) {
+      item = item || {};
+      const tid = item.tid || item.topicId || item.slug || '';
+      const slug = item.slug || (tid ? String(tid) : '');
+      const href = item.href || item.url || (slug ? '/topic/' + slug : '');
+      const title = norm(item.title || item.topicTitle || item.name || '');
+      const excerpt = stripHtml(item.teaser && (item.teaser.content || item.teaser.text) || item.content || item.excerpt || item.description || '');
+      let image = item.image || item.cover || item.thumbnail || '';
+      if (!image && item.teaser && item.teaser.image) image = item.teaser.image;
+      if (!title || !href) return null;
+      return { href: href, title: title, excerpt: norm(excerpt), image: image };
+    }).filter(Boolean).slice(0, 60);
+  }
+
+  function renderNotes($grid, notes) {
+    $grid.empty();
+    notes.forEach(function (note) {
+      const imageHtml = note.image
+        ? '<div class="xhs-note-cover" style="background-image:url(&quot;' + esc(note.image) + '&quot;)"></div>'
+        : '<div class="xhs-note-cover xhs-note-cover-empty"></div>';
+      const excerptHtml = note.excerpt
+        ? '<div class="xhs-note-excerpt">' + esc(note.excerpt).slice(0, 90) + '</div>'
+        : '';
+      $grid.append(
+        '<a class="xhs-note-card" href="' + esc(note.href) + '" aria-label="' + esc(T('noteOpen')) + '">' +
+          imageHtml +
+          '<div class="xhs-note-body">' +
+            '<div class="xhs-note-title">' + esc(note.title) + '</div>' +
+            excerptHtml +
+          '</div>' +
+        '</a>'
+      );
+    });
   }
 
   function bindGlobalEvents() {
