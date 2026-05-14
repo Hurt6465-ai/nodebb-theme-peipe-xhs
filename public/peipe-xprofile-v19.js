@@ -1,4 +1,4 @@
-// URL.canParse 个人主页polyfill for older browsers
+
 if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   URL.canParse = function (url, base) {
     try {
