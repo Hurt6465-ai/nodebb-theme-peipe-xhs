@@ -4,7 +4,7 @@
   "nbbpm": {
     "compatibility": "^4.0.0"
   },
-  "description": "Harmony theme for NodeBB",
+  "description": "新小红薯个人主题",
   "main": "library.js",
   "repository": {
     "type": "git",
