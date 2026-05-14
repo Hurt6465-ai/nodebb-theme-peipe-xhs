@@ -80,6 +80,15 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     notesLoading: '正在加载笔记...',
     notesEmpty: '还没有笔记',
     noteOpen: '打开笔记',
+    translate: '翻译',
+    translating: '翻译中...',
+    translateFail: '翻译失败',
+    reviewTranslate: '翻译评价',
+    reviewTranslateInput: '翻译输入',
+    reviewAnonymousUser: '匿名用户',
+    reviewUser: '用户',
+    reviewMine: '我的评价',
+    starLabel: '{{count}} 星',
     reviewSummary: '综合评分',
     reviewCount: '人评价',
     reviewTitle: '语伴评价',
@@ -126,16 +135,21 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     missingPrefix: '请先补全：'
   };
 
-  let profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_XPROFILE_TEXT || window.PEIPE_XPROFILE_TEXT || window.PEIPE_PROFILE_TEXT || {});
+  let profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_XPROFILE_TEXT || window.PEIPE_PROFILE_TEXT || {});
   let profileI18nPromise = null;
   let profileAssetsReady = false;
   let uploadCompressionInstalled = false;
 
   // Start hiding early when this script loads on a mobile user page.
   installCriticalNoFlickerStyle();
-  if (window.innerWidth <= MOBILE_MAX && /^\/user\//.test(location.pathname || '')) {
+  function setBootingBodyClass() {
+    if (!document.body) return;
     document.body.classList.remove('pxp19-profile-disabled');
     document.body.classList.add('pxp19-profile-booting');
+  }
+  if (window.innerWidth <= MOBILE_MAX && /^\/user\//.test(location.pathname || '')) {
+    if (document.body) setBootingBodyClass();
+    else document.addEventListener('DOMContentLoaded', setBootingBodyClass, { once: true });
   }
 
   function ensureExternalCss() {
@@ -217,13 +231,56 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       (document.querySelector('meta[name="csrf-token"]') && document.querySelector('meta[name="csrf-token"]').getAttribute('content')) || '';
   }
 
+
+  function safeUrl(url) {
+    url = String(url || '').trim();
+    if (!url) return '';
+    if (/^(https?:)?\/\//i.test(url)) return url;
+    if (/^\//.test(url)) return url;
+    if (/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(url)) return url;
+    return '';
+  }
+
+  function getTranslateTargetLang() {
+    const raw = String(
+      (window.config && (window.config.userLang || window.config.language)) ||
+      document.documentElement.lang ||
+      navigator.language ||
+      PROFILE_ASSETS.i18nDefault ||
+      'zh-CN'
+    ).toLowerCase().replace('_', '-');
+    const short = raw.split('-')[0];
+    if (short === 'zh') return 'zh-CN';
+    if (short === 'my' || short === 'mm') return 'my';
+    if (short === 'vi' || short === 'vn') return 'vi';
+    if (short === 'jp' || short === 'ja') return 'ja';
+    if (short === 'kr' || short === 'ko') return 'ko';
+    return short || 'en';
+  }
+
+  function translatePlainText(text) {
+    const clean = norm(text).slice(0, 900);
+    if (!clean) return Promise.resolve('');
+    const url = 'https://translate.googleapis.com/translate_a/single?' + new URLSearchParams({
+      client: 'gtx', sl: 'auto', tl: getTranslateTargetLang(), dt: 't', q: clean
+    }).toString();
+    return fetch(url, { credentials: 'omit', cache: 'force-cache' })
+      .then(function (res) { if (!res.ok) throw new Error('translate ' + res.status); return res.json(); })
+      .then(function (data) {
+        const parts = Array.isArray(data && data[0]) ? data[0] : [];
+        return norm(parts.map(function (p) { return p && p[0] ? p[0] : ''; }).join(''));
+      });
+  }
+
   function installCriticalNoFlickerStyle() {
     if (document.getElementById('pxp19-critical-style')) return;
     const style = document.createElement('style');
     style.id = 'pxp19-critical-style';
     style.textContent = '@media (max-width:768px){body[class*=page-user].pxp19-profile-booting [component="bottombar"],body[class*=page-user].pxp19-profile-booting .sidebar-left,body[class*=page-user].pxp19-profile-booting .sidebar-right,body[class*=page-user].pxp19-profile-booting .fixed-bottom,body[class*=page-user].pxp19-profile-active [component="bottombar"],body[class*=page-user].pxp19-profile-active .sidebar-left,body[class*=page-user].pxp19-profile-active .sidebar-right,body[class*=page-user].pxp19-profile-active .fixed-bottom{display:none!important}body[class*=page-user].pxp19-profile-booting main#panel,body[class*=page-user].pxp19-profile-active main#panel{margin-top:0!important;padding-top:0!important}body[class*=page-user].pxp19-profile-booting .account{visibility:hidden!important;min-height:100vh}body[class*=page-user].pxp19-profile-ready .account,body[class*=page-user].pxp19-profile-active .account{visibility:visible!important}}';
-    document.head.appendChild(style);
+    const parent = document.head || document.documentElement;
+    if (parent) parent.appendChild(style);
   }
+
 
   function toastProfile(text) {
     try {
@@ -329,31 +386,46 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       const type = cfg.useWebp && webp ? 'image/webp' : 'image/jpeg';
       const targetBytes = imageTargetBytes(cfg);
       return loadImageFromFile(file).then(function (img) {
-        const w = img.width || 1;
-        const h = img.height || 1;
-        const maxSide = Number(cfg.maxSide || 1080);
-        const scale = Math.min(1, maxSide / Math.max(w, h));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(w * scale));
-        canvas.height = Math.max(1, Math.round(h * scale));
-        const ctx = canvas.getContext('2d');
-        if (!ctx || !canvas.toBlob) return file;
-        img.draw(ctx, canvas.width, canvas.height);
-        img.close && img.close();
-
+        const originalW = img.width || 1;
+        const originalH = img.height || 1;
         const qualities = Array.isArray(cfg.qualities) && cfg.qualities.length ? cfg.qualities : [cfg.quality || 0.58, 0.50, 0.44, 0.38, 0.32, 0.26, 0.22];
+        let side = Number(cfg.maxSide || 1080);
         let best = null;
         let chain = Promise.resolve();
-        qualities.forEach(function (q) {
+
+        function encodeRound() {
+          const scale = Math.min(1, side / Math.max(originalW, originalH));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(originalW * scale));
+          canvas.height = Math.max(1, Math.round(originalH * scale));
+          const ctx = canvas.getContext('2d');
+          if (!ctx || !canvas.toBlob) return Promise.resolve(file);
+          img.draw(ctx, canvas.width, canvas.height);
+          let qchain = Promise.resolve();
+          qualities.forEach(function (q) {
+            qchain = qchain.then(function () {
+              if (best && best.size <= targetBytes) return best;
+              return canvasToBlob(canvas, type, Number(q)).then(function (blob) {
+                if (blob && blob.size && (!best || blob.size < best.size)) best = blob;
+                return best;
+              });
+            });
+          });
+          return qchain;
+        }
+
+        for (let round = 0; round < 5; round += 1) {
           chain = chain.then(function () {
             if (best && best.size <= targetBytes) return best;
-            return canvasToBlob(canvas, type, Number(q)).then(function (blob) {
-              if (blob && blob.size) best = blob;
+            return encodeRound().then(function () {
+              side = Math.max(360, Math.round(side * 0.85));
               return best;
             });
           });
-        });
+        }
+
         return chain.then(function () {
+          img.close && img.close();
           if (!best || !best.size) return file;
           if (Number(file.size || 0) && best.size >= Number(file.size || 0) * 0.98) return file;
           return makeCompressedFile(file, best, type);
@@ -365,34 +437,50 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     });
   }
 
+
   function shouldUseAvatarConfig(url) {
     const s = String(url || '').toLowerCase();
     return /avatar|picture|profile|user/.test(s);
   }
 
+  function shouldCompressUploadUrl(url) {
+    const s = String(url || '').toLowerCase();
+    if (!s) return /^\/user\//.test(location.pathname || '');
+    return /\/api\/post\/upload|\/api\/uploads|\/upload|avatar|picture|profile|cover|user/.test(s);
+  }
+
+
   function cloneAndCompressFormData(fd, url) {
     if (!fd || fd.__pxp19ProfileCompressed) return Promise.resolve(fd);
     const cfg = shouldUseAvatarConfig(url) ? PROFILE_ASSETS.avatarImageConfig : PROFILE_ASSETS.imageConfig;
-    const next = new FormData();
-    const tasks = [];
+    const entries = [];
     fd.forEach(function (value, key) {
-      if (value instanceof File && isCompressibleImage(value)) {
-        tasks.push(compressImageFile(value, cfg).then(function (compressed) {
-          next.append(key, compressed, compressed.name || value.name || 'image.jpg');
-        }));
-      } else if (value instanceof Blob && value.type && /^image\//i.test(value.type)) {
-        tasks.push(compressImageFile(value, cfg).then(function (compressed) {
-          next.append(key, compressed, compressed.name || 'image.jpg');
-        }));
-      } else {
-        next.append(key, value);
-      }
+      entries.push({ key: key, value: value });
     });
-    return Promise.all(tasks).then(function () {
+    return Promise.all(entries.map(function (entry) {
+      const value = entry.value;
+      if (value instanceof File && isCompressibleImage(value)) {
+        return compressImageFile(value, cfg).then(function (compressed) {
+          return { key: entry.key, value: compressed, filename: compressed.name || value.name || 'image.jpg' };
+        });
+      }
+      if (value instanceof Blob && value.type && /^image\//i.test(value.type)) {
+        return compressImageFile(value, cfg).then(function (compressed) {
+          return { key: entry.key, value: compressed, filename: compressed.name || 'image.jpg' };
+        });
+      }
+      return entry;
+    })).then(function (items) {
+      const next = new FormData();
+      items.forEach(function (item) {
+        if (item.filename) next.append(item.key, item.value, item.filename);
+        else next.append(item.key, item.value);
+      });
       try { Object.defineProperty(next, '__pxp19ProfileCompressed', { value: true }); } catch (e) { next.__pxp19ProfileCompressed = true; }
       return next;
     });
   }
+
 
   function installUploadCompressionPatch() {
     if (uploadCompressionInstalled) return;
@@ -403,7 +491,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       const patchedFetch = function (input, init) {
         init = init || {};
         const url = typeof input === 'string' ? input : (input && input.url) || '';
-        if (init.body instanceof FormData) {
+        if (init.body instanceof FormData && shouldCompressUploadUrl(url)) {
           toastProfile(T('compressing'));
           return cloneAndCompressFormData(init.body, url).then(function (body) {
             init.body = body;
@@ -427,7 +515,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
         return rawOpen.apply(this, arguments);
       };
       window.XMLHttpRequest.prototype.send = function (body) {
-        if (body instanceof FormData && !body.__pxp19ProfileCompressed) {
+        if (body instanceof FormData && !body.__pxp19ProfileCompressed && shouldCompressUploadUrl(this.__pxp19ProfileUploadUrl || '')) {
           const xhr = this;
           toastProfile(T('compressing'));
           cloneAndCompressFormData(body, xhr.__pxp19ProfileUploadUrl || '').then(function (nextBody) {
@@ -735,8 +823,9 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
   function getAvatarSrc() {
     const u = getProfileData();
-    return u.picture || u.uploadedpicture || '';
+    return safeUrl(u.picture || u.uploadedpicture || '');
   }
+
 
   function getAvatarIcon() {
     const u = getProfileData();
@@ -748,8 +837,9 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
   function getCoverUrl() {
     const u = getProfileData();
-    return u['cover:url'] || '';
+    return safeUrl(u['cover:url'] || '');
   }
+
 
   function getBioText() {
     const u = getProfileData();
@@ -784,39 +874,40 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   }
 
   function getCountryFlagEmoji() {
-    const raw = getCountryText();
-    if (!raw) return '';
-
-    const pairs = [
-      ['mm', '🇲🇲'], ['my', '🇲🇲'], ['缅甸', '🇲🇲'], ['myanmar', '🇲🇲'], ['burma', '🇲🇲'],
-      ['cn', '🇨🇳'], ['zh', '🇨🇳'], ['中国', '🇨🇳'], ['china', '🇨🇳'],
-      ['sg', '🇸🇬'], ['新加坡', '🇸🇬'], ['singapore', '🇸🇬'],
-      ['th', '🇹🇭'], ['泰国', '🇹🇭'], ['thailand', '🇹🇭'],
-      ['la', '🇱🇦'], ['lo', '🇱🇦'], ['老挝', '🇱🇦'], ['laos', '🇱🇦'],
-      ['vn', '🇻🇳'], ['vi', '🇻🇳'], ['越南', '🇻🇳'], ['vietnam', '🇻🇳'],
-      ['kh', '🇰🇭'], ['km', '🇰🇭'], ['柬埔寨', '🇰🇭'], ['cambodia', '🇰🇭'],
-      ['my', '🇲🇾'], ['ms', '🇲🇾'], ['马来西亚', '🇲🇾'], ['malaysia', '🇲🇾'],
-      ['ph', '🇵🇭'], ['tl', '🇵🇭'], ['菲律宾', '🇵🇭'], ['philippines', '🇵🇭'],
-      ['jp', '🇯🇵'], ['ja', '🇯🇵'], ['日本', '🇯🇵'], ['japan', '🇯🇵'],
-      ['kr', '🇰🇷'], ['ko', '🇰🇷'], ['韩国', '🇰🇷'], ['korea', '🇰🇷'],
-      ['us', '🇺🇸'], ['usa', '🇺🇸'], ['美国', '🇺🇸'], ['united states', '🇺🇸'],
-      ['gb', '🇬🇧'], ['uk', '🇬🇧'], ['英国', '🇬🇧'], ['united kingdom', '🇬🇧'],
-      ['fr', '🇫🇷'], ['法国', '🇫🇷'], ['france', '🇫🇷'],
-      ['de', '🇩🇪'], ['德国', '🇩🇪'], ['germany', '🇩🇪'],
-      ['in', '🇮🇳'], ['印度', '🇮🇳'], ['india', '🇮🇳']
-    ];
-
-    const lower = raw.toLowerCase().replace(/[\s_-]/g, '');
-    for (let i = 0; i < pairs.length; i += 1) {
-      const key = String(pairs[i][0]).toLowerCase().replace(/[\s_-]/g, '');
-      if (lower === key) return pairs[i][1];
-    }
-    for (let i = 0; i < pairs.length; i += 1) {
-      const key = String(pairs[i][0]).toLowerCase().replace(/[\s_-]/g, '');
-      if (key.length > 2 && lower.indexOf(key) !== -1) return pairs[i][1];
-    }
-    return '';
+    const u = getProfileData();
+    const raw = norm(u.countryCode || u.country || u.nationality || u.language_flag || '');
+    return countryCodeToFlag(raw);
   }
+
+  function countryCodeToFlag(code) {
+    const raw = String(code || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+    const map = {
+      cn: '🇨🇳', zhcn: '🇨🇳', china: '🇨🇳', '中国': '🇨🇳',
+      mm: '🇲🇲', myanmar: '🇲🇲', burma: '🇲🇲', '缅甸': '🇲🇲',
+      my: '🇲🇾', malaysia: '🇲🇾', '马来西亚': '🇲🇾',
+      vn: '🇻🇳', vietnam: '🇻🇳', '越南': '🇻🇳',
+      th: '🇹🇭', thailand: '🇹🇭', '泰国': '🇹🇭',
+      us: '🇺🇸', usa: '🇺🇸', unitedstates: '🇺🇸', '美国': '🇺🇸',
+      gb: '🇬🇧', uk: '🇬🇧', unitedkingdom: '🇬🇧', '英国': '🇬🇧',
+      jp: '🇯🇵', japan: '🇯🇵', '日本': '🇯🇵',
+      kr: '🇰🇷', korea: '🇰🇷', '韩国': '🇰🇷',
+      sg: '🇸🇬', singapore: '🇸🇬', '新加坡': '🇸🇬',
+      kh: '🇰🇭', cambodia: '🇰🇭', '柬埔寨': '🇰🇭',
+      la: '🇱🇦', laos: '🇱🇦', '老挝': '🇱🇦',
+      ph: '🇵🇭', philippines: '🇵🇭', '菲律宾': '🇵🇭',
+      fr: '🇫🇷', france: '🇫🇷', '法国': '🇫🇷',
+      de: '🇩🇪', germany: '🇩🇪', '德国': '🇩🇪',
+      in: '🇮🇳', india: '🇮🇳', '印度': '🇮🇳'
+    };
+    return map[raw] || '';
+  }
+
+  function languageCodeToLabel(code) {
+    const raw = String(code || '').trim().toLowerCase();
+    const map = { zh: '中文', cn: '中文', en: 'English', my: 'မြန်မာ', mm: 'မြန်မာ', ms: 'Malay', jp: '日本語', ja: '日本語', kr: '한국어', ko: '한국어', vn: 'Tiếng Việt', vi: 'Tiếng Việt', th: 'ภาษาไทย' };
+    return map[raw] || code;
+  }
+
 
   function getLanguagePairInfo() {
     const u = getProfileData();
@@ -931,9 +1022,9 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
   function buildProfileShell(dom) {
     const displayName = getDisplayName();
-    const avatarSrc = getAvatarSrc();
+    const avatarSrc = safeUrl(getAvatarSrc());
     const icon = getAvatarIcon();
-    const coverUrl = getCoverUrl();
+    const coverUrl = safeUrl(getCoverUrl());
     const bio = getBioText();
     const gender = getGenderSymbol();
     const age = getAge();
@@ -972,9 +1063,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       ? '<div class="pxp19-language-line' + (containsMyanmar(langInfo.text) ? ' pxp19-mm-text' : '') + '">' + renderLanguagePairHtml(langInfo) + '</div>'
       : '';
 
-    const countryHtml = country
-      ? '<div class="pxp19-country-line' + (containsMyanmar(country) ? ' pxp19-mm-text' : '') + '"><i class="fa fa-map-marker-alt"></i><span>' + esc(country) + '</span></div>'
-      : '';
+    const countryHtml = ''; // 不在用户名下显示定位/国家，只在头像左下角显示国旗
 
     const bioHtml = bio
       ? '<div class="pxp19-bio' + (bioIsMyanmar ? ' pxp19-mm-bio' : '') + '">' + esc(bio) + '</div>'
@@ -1010,7 +1099,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     );
 
     if (coverUrl && coverUrl.indexOf('cover-default') === -1) {
-      $header.find('.pxp19-cover').css('background-image', 'url("' + cssUrlEscape(coverUrl) + '")');
+      $header.find('.pxp19-cover').css('background-image', 'url("' + cssUrlEscape(safeUrl(coverUrl)) + '")');
     } else {
       $header.find('.pxp19-cover').css('background', 'linear-gradient(135deg, #ff826d 0%, #ff2442 48%, #d81b60 100%)');
     }
@@ -1359,19 +1448,34 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   }
 
   function profileAlert(message, type) {
-    if (window.app && type === 'error' && typeof window.app.alertError === 'function') return app.alertError(message);
-    if (window.app && typeof window.app.alertSuccess === 'function') return app.alertSuccess(message);
+    if (window.app) {
+      if (type === 'error') {
+        if (typeof window.app.alertError === 'function') return window.app.alertError(message);
+        if (typeof window.app.alert === 'function') return window.app.alert({ type: 'danger', message: message });
+        return window.alert(message);
+      }
+      if (typeof window.app.alertSuccess === 'function') return window.app.alertSuccess(message);
+      if (typeof window.app.alert === 'function') return window.app.alert({ type: 'success', message: message });
+    }
     window.alert(message);
   }
+
 
   function starButtons(value, interactive) {
     const n = Math.max(0, Math.min(5, Math.round(Number(value || 0))));
     let html = '';
     for (let i = 1; i <= 5; i += 1) {
-      html += '<button type="button" class="pxp19-star' + (i <= n ? ' active' : '') + '" data-star="' + i + '"' + (interactive ? '' : ' tabindex="-1" aria-hidden="true"') + '>★</button>';
+      const active = i <= n ? ' active' : '';
+      const label = T('starLabel', { count: i });
+      if (interactive) {
+        html += '<button type="button" class="pxp19-star' + active + '" data-star="' + i + '" aria-label="' + esc(label) + '" aria-pressed="' + (i <= n ? 'true' : 'false') + '">★</button>';
+      } else {
+        html += '<span class="pxp19-star' + active + '" aria-hidden="true">★</span>';
+      }
     }
     return html;
   }
+
 
   function normalizeReviewList(data) {
     data = data || {};
@@ -1421,19 +1525,22 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
   function renderReviewItem(item) {
     item = item || {};
-    const name = item.authorName || item.username || (item.anonymous ? '匿名用户' : '用户');
-    const avatar = item.authorAvatar || item.picture || '';
+    const name = item.authorName || item.username || (item.anonymous ? T('reviewAnonymousUser') : T('reviewUser'));
+    const avatar = safeUrl(item.authorAvatar || item.picture || '');
     const rating = Number(item.overall || item.rating || item.score || 0) || 0;
     const content = item.content || item.text || item.comment || '';
-    const mine = item.mine ? '<span class="pxp19-review-mine">我的评价</span>' : '';
+    const mine = item.mine ? '<span class="pxp19-review-mine">' + esc(T('reviewMine')) + '</span>' : '';
+    const translate = content ? '<button type="button" class="pxp19-review-translate" data-source="' + esc(content) + '">' + esc(T('reviewTranslate')) + '</button><div class="pxp19-review-translated" hidden></div>' : '';
     return '<div class="pxp19-review-item">' +
       '<div class="pxp19-review-avatar">' + (avatar ? '<img src="' + esc(avatar) + '" alt="">' : '<span>' + esc(String(name).slice(0, 1).toUpperCase()) + '</span>') + '</div>' +
       '<div class="pxp19-review-main">' +
         '<div class="pxp19-review-head"><strong>' + esc(name) + '</strong>' + mine + '<span class="pxp19-review-mini-stars">' + starButtons(rating, false) + '</span></div>' +
         (content ? '<div class="pxp19-review-text">' + esc(content) + '</div>' : '') +
+        translate +
       '</div>' +
     '</div>';
   }
+
 
   function renderReviewSection(dom) {
     const $content = dom.$accountContent;
@@ -1455,7 +1562,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
         '<div class="pxp19-review-form-title">' + esc(T('reviewTitle')) + '</div>' +
         '<div class="pxp19-review-input-stars" data-rating="5">' + starButtons(5, true) + '</div>' +
         '<textarea class="pxp19-review-textarea" maxlength="240" placeholder="' + esc(T('reviewPlaceholder')) + '"></textarea>' +
-        '<label class="pxp19-review-anon"><input type="checkbox" class="pxp19-review-anonymous"> <span>' + esc(T('reviewAnonymous')) + '</span></label>' +
+        '<div class="pxp19-review-tools"><button type="button" class="pxp19-review-input-translate">' + esc(T('reviewTranslateInput')) + '</button><label class="pxp19-review-anon"><input type="checkbox" class="pxp19-review-anonymous"> <span>' + esc(T('reviewAnonymous')) + '</span></label></div>' +
         '<button type="button" class="pxp19-review-submit">' + esc(T('reviewSubmit')) + '</button>' +
         '<div class="pxp19-review-hint"></div>' +
       '</div>' +
@@ -1519,9 +1626,16 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     return s.split(/[，,、\s/|]+/).map(norm).filter(Boolean);
   }
 
+  function optionValue(item) {
+    if (!item) return '';
+    if (item.value !== undefined && item.value !== null) return String(item.value);
+    if (item.key !== undefined && item.key !== null) return String(item.key);
+    return '';
+  }
+
   function optionLabel(list, value) {
     value = String(value || '');
-    const item = (list || []).find(function (x) { return String(x.value || x.key) === value; });
+    const item = (list || []).find(function (x) { return optionValue(x) === value; });
     return item ? item.label : value;
   }
 
@@ -1543,6 +1657,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       if (Array.isArray(json.countries)) opts.countries = json.countries;
       if (Array.isArray(json.languages)) opts.languages = json.languages;
       if (Array.isArray(json.relationships)) opts.relationships = json.relationships;
+      if (Array.isArray(json.genders)) opts.genders = json.genders;
       if (Array.isArray(json.educations)) opts.educations = json.educations;
       if (Array.isArray(json.occupations)) opts.occupations = json.occupations;
       if (Array.isArray(json.tags)) opts.tags = json.tags;
@@ -1652,18 +1767,17 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     partnerEditorState.picker = { $button: $button, name: name, multi: multi, max: max, selected: selected };
     $('#pxp19-choice-sheet .pxp19-choice-head b').text($button.find('span').text());
     $('#pxp19-choice-sheet .pxp19-choice-list').html(list.map(function (item) {
-      const val = String(item.value || item.key || '');
+      const val = optionValue(item);
       const active = selected.indexOf(val) !== -1 ? ' active' : '';
-      return '<button type="button" class="pxp19-choice-option' + active + '" data-value="' + esc(val) + '"><i>' + esc(countryFlag(item.value) || '') + '</i><span>' + esc(item.label || val) + '</span></button>';
+      return '<button type="button" class="pxp19-choice-option' + active + '" data-value="' + esc(val) + '"><i>' + esc(name === 'language_flag' ? countryFlag(item.value) : '') + '</i><span>' + esc(item.label || val) + '</span></button>';
     }).join(''));
     $('#pxp19-choice-mask, #pxp19-choice-sheet').addClass('show');
   }
 
   function countryFlag(code) {
-    const raw = String(code || '').toLowerCase().replace(/[\s_-]/g, '');
-    const map = { cn: '🇨🇳', zh: '🇨🇳', mm: '🇲🇲', my: '🇲🇲', vn: '🇻🇳', vi: '🇻🇳', th: '🇹🇭', us: '🇺🇸', gb: '🇬🇧', uk: '🇬🇧', jp: '🇯🇵', ja: '🇯🇵', kr: '🇰🇷', ko: '🇰🇷', sg: '🇸🇬', kh: '🇰🇭', km: '🇰🇭', la: '🇱🇦', lo: '🇱🇦', ph: '🇵🇭', tl: '🇵🇭', fr: '🇫🇷', de: '🇩🇪', in: '🇮🇳' };
-    return map[raw] || '';
+    return countryCodeToFlag(code);
   }
+
 
   function closeChoicePicker(apply) {
     const picker = partnerEditorState.picker;
@@ -1863,7 +1977,44 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       const val = Number($(this).attr('data-star') || 5);
       const $wrap = $(this).closest('.pxp19-review-input-stars').attr('data-rating', val);
       $wrap.find('.pxp19-star').each(function () {
-        $(this).toggleClass('active', Number($(this).attr('data-star')) <= val);
+        const active = Number($(this).attr('data-star')) <= val;
+        $(this).toggleClass('active', active).attr('aria-pressed', active ? 'true' : 'false');
+      });
+    });
+
+    $(document).on('click.pxp19Profile', '.pxp19-review-input-translate', function () {
+      const $btn = $(this);
+      const $form = $btn.closest('.pxp19-review-form');
+      const $input = $form.find('.pxp19-review-textarea');
+      const original = $input.val();
+      if (!norm(original)) return;
+      $btn.prop('disabled', true).text(T('translating'));
+      translatePlainText(original).then(function (out) {
+        if (out) $input.val(out);
+      }).catch(function () {
+        profileAlert(T('translateFail'), 'error');
+      }).finally(function () {
+        $btn.prop('disabled', false).text(T('reviewTranslateInput'));
+      });
+    });
+
+    $(document).on('click.pxp19Profile', '.pxp19-review-translate', function () {
+      const $btn = $(this);
+      const source = $btn.attr('data-source') || '';
+      const $box = $btn.next('.pxp19-review-translated');
+      if ($box.data('loaded') === '1') {
+        $box.prop('hidden', !$box.prop('hidden'));
+        return;
+      }
+      $btn.prop('disabled', true).text(T('translating'));
+      translatePlainText(source).then(function (out) {
+        if (out) {
+          $box.text(out).prop('hidden', false).data('loaded', '1');
+        }
+      }).catch(function () {
+        profileAlert(T('translateFail'), 'error');
+      }).finally(function () {
+        $btn.prop('disabled', false).text(T('reviewTranslate'));
       });
     });
 
