@@ -24,7 +24,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
 
   const PROFILE_ASSETS = Object.assign({
-    i18nBaseUrl: '/plugins/nodebb-theme-peipe-xhs/peipe-profile/i18n/',
+    i18nBaseUrl: '/plugins/nodebb-theme-peipe-xhs/peipe-xprofile-v19/i18n/',
     i18nDefault: 'zh-CN',
     imageConfig: {
       maxSide: 1080,
@@ -42,7 +42,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       useWebp: true,
       qualities: [0.56, 0.48, 0.40, 0.34, 0.28, 0.22]
     }
-  }, window.PEIPE_PROFILE_CONFIG || {});
+  }, window.PEIPE_XPROFILE_CONFIG || window.PEIPE_PROFILE_CONFIG || {});
 
   const DEFAULT_PROFILE_TEXT = {
     review: '评价',
@@ -82,19 +82,19 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     noteOpen: '打开笔记'
   };
 
-  let profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_PROFILE_TEXT || {});
+  let profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_XPROFILE_TEXT || window.PEIPE_XPROFILE_TEXT || window.PEIPE_PROFILE_TEXT || {});
   let profileI18nPromise = null;
   let profileAssetsReady = false;
   let uploadCompressionInstalled = false;
 
   // Start hiding early when this script loads on a mobile user page.
   if (window.innerWidth <= MOBILE_MAX && /^\/user\//.test(location.pathname || '')) {
-    document.body.classList.remove('xhs-profile-disabled');
-    document.body.classList.add('xhs-profile-booting');
+    document.body.classList.remove('pxp19-profile-disabled');
+    document.body.classList.add('pxp19-profile-booting');
   }
 
   function ensureExternalCss() {
-    // CSS is compiled by plugin.json -> scss/peipe-profile.scss. Do not inject a second CSS link.
+    // CSS is compiled by plugin.json -> scss/peipe-xprofile-v19.scss. Do not inject a second CSS link.
     return;
   }
 
@@ -133,12 +133,12 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       });
     });
     profileI18nPromise = chain.then(function (json) {
-      profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_PROFILE_TEXT || {}, json || {});
+      profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_XPROFILE_TEXT || window.PEIPE_PROFILE_TEXT || {}, json || {});
       profileAssetsReady = true;
       return profileText;
     }).catch(function (err) {
-      console.warn('[peipe-profile] i18n load failed, using built-in zh-CN fallback', err);
-      profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_PROFILE_TEXT || {});
+      console.warn('[peipe-xprofile-v19] i18n load failed, using built-in zh-CN fallback', err);
+      profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_XPROFILE_TEXT || window.PEIPE_PROFILE_TEXT || {});
       profileAssetsReady = true;
       return profileText;
     });
@@ -161,12 +161,12 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   function toastProfile(text) {
     try {
       const body = document.body;
-      body.classList.add('xhs-profile-uploading');
-      body.setAttribute('data-xhs-uploading-text', text || T('uploading'));
+      body.classList.add('pxp19-profile-uploading');
+      body.setAttribute('data-pxp19-uploading-text', text || T('uploading'));
       clearTimeout(body._xhsUploadToastTimer);
       body._xhsUploadToastTimer = setTimeout(function () {
-        body.classList.remove('xhs-profile-uploading');
-        body.removeAttribute('data-xhs-uploading-text');
+        body.classList.remove('pxp19-profile-uploading');
+        body.removeAttribute('data-pxp19-uploading-text');
       }, 1800);
     } catch (e) {}
   }
@@ -293,7 +293,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
         });
       });
     }).catch(function (err) {
-      console.warn('[peipe-profile] image compression skipped', err);
+      console.warn('[peipe-xprofile-v19] image compression skipped', err);
       return file;
     });
   }
@@ -304,7 +304,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   }
 
   function cloneAndCompressFormData(fd, url) {
-    if (!fd || fd.__xhsProfileCompressed) return Promise.resolve(fd);
+    if (!fd || fd.__pxp19ProfileCompressed) return Promise.resolve(fd);
     const cfg = shouldUseAvatarConfig(url) ? PROFILE_ASSETS.avatarImageConfig : PROFILE_ASSETS.imageConfig;
     const next = new FormData();
     const tasks = [];
@@ -322,7 +322,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       }
     });
     return Promise.all(tasks).then(function () {
-      try { Object.defineProperty(next, '__xhsProfileCompressed', { value: true }); } catch (e) { next.__xhsProfileCompressed = true; }
+      try { Object.defineProperty(next, '__pxp19ProfileCompressed', { value: true }); } catch (e) { next.__pxp19ProfileCompressed = true; }
       return next;
     });
   }
@@ -331,7 +331,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     if (uploadCompressionInstalled) return;
     uploadCompressionInstalled = true;
 
-    if (window.fetch && !window.fetch.__xhsProfileCompressionPatched) {
+    if (window.fetch && !window.fetch.__pxp19ProfileCompressionPatched) {
       const rawFetch = window.fetch;
       const patchedFetch = function (input, init) {
         init = init || {};
@@ -348,22 +348,22 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
         }
         return rawFetch.apply(this, arguments);
       };
-      patchedFetch.__xhsProfileCompressionPatched = true;
+      patchedFetch.__pxp19ProfileCompressionPatched = true;
       window.fetch = patchedFetch;
     }
 
-    if (window.XMLHttpRequest && !window.XMLHttpRequest.prototype.__xhsProfileCompressionPatched) {
+    if (window.XMLHttpRequest && !window.XMLHttpRequest.prototype.__pxp19ProfileCompressionPatched) {
       const rawOpen = window.XMLHttpRequest.prototype.open;
       const rawSend = window.XMLHttpRequest.prototype.send;
       window.XMLHttpRequest.prototype.open = function (method, url) {
-        this.__xhsProfileUploadUrl = url;
+        this.__pxp19ProfileUploadUrl = url;
         return rawOpen.apply(this, arguments);
       };
       window.XMLHttpRequest.prototype.send = function (body) {
-        if (body instanceof FormData && !body.__xhsProfileCompressed) {
+        if (body instanceof FormData && !body.__pxp19ProfileCompressed) {
           const xhr = this;
           toastProfile(T('compressing'));
-          cloneAndCompressFormData(body, xhr.__xhsProfileUploadUrl || '').then(function (nextBody) {
+          cloneAndCompressFormData(body, xhr.__pxp19ProfileUploadUrl || '').then(function (nextBody) {
             toastProfile(T('uploading'));
             rawSend.call(xhr, nextBody);
           }).catch(function () {
@@ -373,7 +373,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
         }
         return rawSend.apply(this, arguments);
       };
-      window.XMLHttpRequest.prototype.__xhsProfileCompressionPatched = true;
+      window.XMLHttpRequest.prototype.__pxp19ProfileCompressionPatched = true;
     }
   }
 
@@ -381,7 +381,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     if (!isAccountPage()) {
       cleanupInjected();
       restoreGlobalUI();
-      document.body.classList.add('xhs-profile-disabled');
+      document.body.classList.add('pxp19-profile-disabled');
       return;
     }
     scheduleInit();
@@ -428,21 +428,21 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     if (window.innerWidth > MOBILE_MAX) {
       cleanupInjected();
       restoreGlobalUI();
-      document.body.classList.add('xhs-profile-disabled');
+      document.body.classList.add('pxp19-profile-disabled');
       return;
     }
 
     if (!isAccountPage()) {
       cleanupInjected();
       restoreGlobalUI();
-      document.body.classList.add('xhs-profile-disabled');
+      document.body.classList.add('pxp19-profile-disabled');
       return;
     }
 
     ensureExternalCss();
     installUploadCompressionPatch();
-    document.body.classList.remove('xhs-profile-disabled');
-    document.body.classList.add('xhs-profile-booting');
+    document.body.classList.remove('pxp19-profile-disabled');
+    document.body.classList.add('pxp19-profile-booting');
 
     // NodeBB ajaxify 在手机 Chrome / Kiwi 下有时先触发 action:ajaxify.end，
     // 后把 .account 真实 DOM 塞进 #content。原版只等约 1 秒，慢网下会错过，
@@ -499,8 +499,8 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       if (tries < MAX_INIT_RETRIES) {
         initRaf = requestAnimationFrame(attempt);
       } else {
-        document.body.classList.remove('xhs-profile-booting');
-        document.body.classList.add('xhs-profile-disabled');
+        document.body.classList.remove('pxp19-profile-booting');
+        document.body.classList.add('pxp19-profile-disabled');
       }
     }
 
@@ -532,8 +532,8 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     buildProfileShell(dom);
     tweakContentArea(dom);
     bindGlobalEvents();
-    document.body.classList.add('xhs-profile-ready');
-    document.body.classList.remove('xhs-profile-booting', 'xhs-profile-disabled');
+    document.body.classList.add('pxp19-profile-ready');
+    document.body.classList.remove('pxp19-profile-booting', 'pxp19-profile-disabled');
   }
 
   function cleanupInjected() {
@@ -554,15 +554,15 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       pageDomObserver = null;
     }
 
-    $('#xhs-profile-shell, #xhs-profile-header, #xhs-profile-topmenu, #xhs-tab-nav, .xhs-injected').remove();
+    $('#pxp19-profile-shell, #pxp19-profile-header, #pxp19-profile-topmenu, #pxp19-tab-nav, .pxp19-injected, #xhs-profile-shell, #xhs-profile-header, #xhs-profile-topmenu, #xhs-tab-nav, .xhs-injected').remove();
 
-    $('.xhs-original-top-hidden').removeClass('xhs-original-top-hidden');
-    $('.xhs-hidden').removeClass('xhs-hidden');
-    $('.xhs-cover-raw').removeClass('xhs-cover-raw');
-    $('.xhs-about-card').removeClass('xhs-about-card');
-    $('.xhs-account-layout').removeClass('xhs-account-layout');
+    $('.pxp19-original-top-hidden, .xhs-original-top-hidden').removeClass('pxp19-original-top-hidden xhs-original-top-hidden');
+    $('.pxp19-hidden, .xhs-hidden').removeClass('pxp19-hidden xhs-hidden');
+    $('.pxp19-cover-raw, .xhs-cover-raw').removeClass('pxp19-cover-raw xhs-cover-raw');
+    $('.pxp19-about-card, .xhs-about-card').removeClass('pxp19-about-card xhs-about-card');
+    $('.pxp19-account-layout, .xhs-account-layout').removeClass('pxp19-account-layout xhs-account-layout');
 
-    $(document).off('.xhsProfile');
+    $(document).off('.pxp19Profile');
   }
 
   function restoreGlobalUI() {
@@ -570,8 +570,8 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     $('.sidebar-left, .sidebar-right').show();
     $('main#panel').css({ 'margin-top': '', 'padding-top': '' });
     $('.layout-container').css({ 'padding-bottom': '' });
-    $('body').removeClass('xhs-profile-active xhs-profile-ready xhs-profile-booting');
-    $('body').addClass('xhs-profile-disabled');
+    $('body').removeClass('pxp19-profile-active pxp19-profile-ready pxp19-profile-booting xhs-profile-active xhs-profile-ready xhs-profile-booting');
+    $('body').addClass('pxp19-profile-disabled');
   }
 
   function getDomCache($account, $top) {
@@ -811,13 +811,13 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
     if (info.nativeText && info.learnText) {
       return (
-        '<span class="xhs-lang-part">' + esc(info.nativeText) + '</span>' +
-        '<span class="xhs-lang-arrow" aria-hidden="true">⇄</span>' +
-        '<span class="xhs-lang-part">' + esc(info.learnText) + '</span>'
+        '<span class="pxp19-lang-part">' + esc(info.nativeText) + '</span>' +
+        '<span class="pxp19-lang-arrow" aria-hidden="true">⇄</span>' +
+        '<span class="pxp19-lang-part">' + esc(info.learnText) + '</span>'
       );
     }
 
-    return '<span class="xhs-lang-part">' + esc(info.text) + '</span>';
+    return '<span class="pxp19-lang-part">' + esc(info.text) + '</span>';
   }
 
   function pickStat(keys) {
@@ -841,18 +841,18 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   }
 
   function hideGlobalNavigation() {
-    $('body').addClass('xhs-profile-active');
+    $('body').addClass('pxp19-profile-active');
   }
 
   function hideOriginalElements(dom) {
-    dom.$top.addClass('xhs-original-top-hidden');
-    dom.$sidebarNav.addClass('xhs-hidden');
-    dom.$originAction.addClass('xhs-hidden');
-    dom.$cover.addClass('xhs-cover-raw');
+    dom.$top.addClass('pxp19-original-top-hidden');
+    dom.$sidebarNav.addClass('pxp19-hidden');
+    dom.$originAction.addClass('pxp19-hidden');
+    dom.$cover.addClass('pxp19-cover-raw');
 
     const $layoutRow = dom.$sidebarNav.parent();
     if ($layoutRow.length) {
-      $layoutRow.addClass('xhs-account-layout');
+      $layoutRow.addClass('pxp19-account-layout');
     }
   }
 
@@ -872,59 +872,59 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
     let avatarHtml;
     if (avatarSrc) {
-      avatarHtml = '<img class="xhs-avatar-img" src="' + esc(avatarSrc) + '" alt="' + esc(displayName) + '">';
+      avatarHtml = '<img class="pxp19-avatar-img" src="' + esc(avatarSrc) + '" alt="' + esc(displayName) + '">';
     } else {
-      avatarHtml = '<div class="xhs-avatar-fallback" style="background:' + esc(icon.bg) + '">' + esc(icon.text) + '</div>';
+      avatarHtml = '<div class="pxp19-avatar-fallback" style="background:' + esc(icon.bg) + '">' + esc(icon.text) + '</div>';
     }
 
     let uploadAvatarHtml = '';
     if (isOwnProfile()) {
       uploadAvatarHtml =
-        '<button type="button" class="xhs-avatar-upload-btn" id="xhsAvatarUploadBtn" aria-label="' + esc(T('uploadAvatar')) + '">' +
+        '<button type="button" class="pxp19-avatar-upload-btn" id="xhsAvatarUploadBtn" aria-label="' + esc(T('uploadAvatar')) + '">' +
           '<i class="fa fa-camera"></i>' +
         '</button>';
     }
 
     const avatarFlagHtml = avatarFlag
-      ? '<span class="xhs-avatar-flag">' + avatarFlag + '</span>'
+      ? '<span class="pxp19-avatar-flag">' + avatarFlag + '</span>'
       : '';
 
     let genderAgeHtml = '';
     if (gender || age) {
       const gaText = [gender, age ? age + T('ageSuffix') : ''].filter(Boolean).join(' ');
-      genderAgeHtml = '<span class="xhs-gender-tag">' + esc(gaText) + '</span>';
+      genderAgeHtml = '<span class="pxp19-gender-tag">' + esc(gaText) + '</span>';
     }
 
     const langHtml = langInfo.text
-      ? '<div class="xhs-language-line' + (containsMyanmar(langInfo.text) ? ' xhs-mm-text' : '') + '">' + renderLanguagePairHtml(langInfo) + '</div>'
+      ? '<div class="pxp19-language-line' + (containsMyanmar(langInfo.text) ? ' pxp19-mm-text' : '') + '">' + renderLanguagePairHtml(langInfo) + '</div>'
       : '';
 
     const countryHtml = country
-      ? '<div class="xhs-country-line' + (containsMyanmar(country) ? ' xhs-mm-text' : '') + '"><i class="fa fa-map-marker-alt"></i><span>' + esc(country) + '</span></div>'
+      ? '<div class="pxp19-country-line' + (containsMyanmar(country) ? ' pxp19-mm-text' : '') + '"><i class="fa fa-map-marker-alt"></i><span>' + esc(country) + '</span></div>'
       : '';
 
     const bioHtml = bio
-      ? '<div class="xhs-bio' + (bioIsMyanmar ? ' xhs-mm-bio' : '') + '">' + esc(bio) + '</div>'
+      ? '<div class="pxp19-bio' + (bioIsMyanmar ? ' pxp19-mm-bio' : '') + '">' + esc(bio) + '</div>'
       : '';
 
-    const headerClasses = ['xhs-injected'];
-    if (!bio) headerClasses.push('xhs-no-bio');
+    const headerClasses = ['pxp19-injected'];
+    if (!bio) headerClasses.push('pxp19-no-bio');
 
-    const $shell = $('<div id="xhs-profile-shell" class="xhs-injected"></div>');
+    const $shell = $('<div id="pxp19-profile-shell" class="pxp19-injected"></div>');
     const $header = $(
-      '<div id="xhs-profile-header" class="' + headerClasses.join(' ') + '">' +
-        '<div class="xhs-cover"></div>' +
-        '<div class="xhs-cover-shade"></div>' +
-        '<div class="xhs-header-overlay">' +
-          '<div class="xhs-user-main">' +
-            '<div class="xhs-avatar-wrap">' +
-              '<div class="xhs-avatar-circle">' + avatarHtml + '</div>' +
+      '<div id="pxp19-profile-header" class="' + headerClasses.join(' ') + '">' +
+        '<div class="pxp19-cover"></div>' +
+        '<div class="pxp19-cover-shade"></div>' +
+        '<div class="pxp19-header-overlay">' +
+          '<div class="pxp19-user-main">' +
+            '<div class="pxp19-avatar-wrap">' +
+              '<div class="pxp19-avatar-circle">' + avatarHtml + '</div>' +
               avatarFlagHtml +
               uploadAvatarHtml +
             '</div>' +
-            '<div class="xhs-user-right">' +
-              '<div class="xhs-name-row">' +
-                '<span class="xhs-display-name' + (nameIsMyanmar ? ' xhs-mm-name' : '') + '">' + esc(displayName) + '</span>' +
+            '<div class="pxp19-user-right">' +
+              '<div class="pxp19-name-row">' +
+                '<span class="pxp19-display-name' + (nameIsMyanmar ? ' pxp19-mm-name' : '') + '">' + esc(displayName) + '</span>' +
                 genderAgeHtml +
               '</div>' +
               langHtml +
@@ -937,9 +937,9 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     );
 
     if (coverUrl && coverUrl.indexOf('cover-default') === -1) {
-      $header.find('.xhs-cover').css('background-image', 'url("' + cssUrlEscape(coverUrl) + '")');
+      $header.find('.pxp19-cover').css('background-image', 'url("' + cssUrlEscape(coverUrl) + '")');
     } else {
-      $header.find('.xhs-cover').css('background', 'linear-gradient(135deg, #ff826d 0%, #ff2442 48%, #d81b60 100%)');
+      $header.find('.pxp19-cover').css('background', 'linear-gradient(135deg, #ff826d 0%, #ff2442 48%, #d81b60 100%)');
     }
 
     dom.$top.before($shell);
@@ -966,41 +966,41 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       { num: getViewsCount(), label: T('views'), href: '' }
     ];
 
-    const $row = $('<div id="xhs-stats-row" class="xhs-injected"></div>');
+    const $row = $('<div id="pxp19-stats-row" class="pxp19-injected"></div>');
     stats.forEach(function (s) {
       const tag = s.href ? 'a' : 'div';
       const hrefAttr = s.href ? ' href="' + s.href + '"' : '';
       $row.append(
-        '<' + tag + ' class="xhs-stat-item"' + hrefAttr + '>' +
-          '<span class="xhs-stat-num">' + esc(s.num) + '</span>' +
-          '<span class="xhs-stat-label">' + esc(s.label) + '</span>' +
+        '<' + tag + ' class="pxp19-stat-item"' + hrefAttr + '>' +
+          '<span class="pxp19-stat-num">' + esc(s.num) + '</span>' +
+          '<span class="pxp19-stat-label">' + esc(s.label) + '</span>' +
         '</' + tag + '>'
       );
     });
 
-    $header.find('.xhs-header-overlay').append($row);
+    $header.find('.pxp19-header-overlay').append($row);
   }
 
   function buildActionButtons(dom, $header) {
     const own = isOwnProfile();
     const editable = isEditableSection();
-    const $bar = $('<div id="xhs-action-bar" class="xhs-injected"></div>');
+    const $bar = $('<div id="pxp19-action-bar" class="pxp19-injected"></div>');
 
     if (own) {
       if (editable) {
-        const $viewBtn = $('<a href="/user/' + getViewedSlug() + '" class="xhs-btn xhs-btn-outline xhs-btn-long">' + esc(T('backHome')) + '</a>');
+        const $viewBtn = $('<a href="/user/' + getViewedSlug() + '" class="pxp19-btn pxp19-btn-outline pxp19-btn-long">' + esc(T('backHome')) + '</a>');
         $bar.append($viewBtn);
       } else {
-        const $editBtn = $('<a href="/user/' + getViewedSlug() + '/edit" class="xhs-btn xhs-btn-primary xhs-btn-long">' + esc(T('editProfile')) + '</a>');
+        const $editBtn = $('<a href="/user/' + getViewedSlug() + '/edit" class="pxp19-btn pxp19-btn-primary pxp19-btn-long">' + esc(T('editProfile')) + '</a>');
         $bar.append($editBtn);
       }
     } else {
-      const $followSlot = $('<div class="xhs-btn-slot xhs-btn-long-slot"></div>');
+      const $followSlot = $('<div class="pxp19-btn-slot pxp19-btn-long-slot"></div>');
       mirrorFollowState($followSlot, dom.$follow, dom.$unfollow);
       $bar.append($followSlot);
 
       if (dom.$chat.length) {
-        const $chatBtn = $('<button type="button" class="xhs-btn xhs-btn-outline xhs-btn-long">' + esc(T('chat')) + '</button>');
+        const $chatBtn = $('<button type="button" class="pxp19-btn pxp19-btn-outline pxp19-btn-long">' + esc(T('chat')) + '</button>');
         $chatBtn.on('click', function (e) {
           e.preventDefault();
           dom.$chat.get(0).click();
@@ -1009,16 +1009,16 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       }
     }
 
-    $header.find('.xhs-header-overlay').append($bar);
+    $header.find('.pxp19-header-overlay').append($bar);
   }
 
   function buildTopMenu(dom, $header) {
     const own = isOwnProfile();
     const admin = isAdminViewer();
-    const $wrap = $('<div id="xhs-profile-topmenu" class="xhs-injected"></div>');
-    const $menuWrap = $('<div class="xhs-menu-wrap xhs-topmenu-wrap"></div>');
-    const $btn = $('<button type="button" class="xhs-topmenu-btn" aria-label="' + esc(T('more')) + '"><i class="fa fa-ellipsis-h"></i></button>');
-    const $menu = $('<div class="xhs-dropdown-menu xhs-topmenu-dropdown" id="xhs-topmenu-dropdown"></div>');
+    const $wrap = $('<div id="pxp19-profile-topmenu" class="pxp19-injected"></div>');
+    const $menuWrap = $('<div class="pxp19-menu-wrap pxp19-topmenu-wrap"></div>');
+    const $btn = $('<button type="button" class="pxp19-topmenu-btn" aria-label="' + esc(T('more')) + '"><i class="fa fa-ellipsis-h"></i></button>');
+    const $menu = $('<div class="pxp19-dropdown-menu pxp19-topmenu-dropdown" id="pxp19-topmenu-dropdown"></div>');
 
     if (own) {
       addMenuLink($menu, '/user/' + getViewedSlug() + '/settings', 'fa-gear', T('settings'));
@@ -1047,7 +1047,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     $btn.on('click', function (e) {
       e.preventDefault();
       e.stopPropagation();
-      $('.xhs-dropdown-menu').not($menu).removeClass('show');
+      $('.pxp19-dropdown-menu').not($menu).removeClass('show');
       $menu.toggleClass('show');
     });
 
@@ -1064,12 +1064,12 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       { key: 'topics', label: T('notes'), href: '/user/' + slug + '/topics' }
     ];
 
-    const $nav = $('<div id="xhs-tab-nav" class="xhs-injected"></div>');
-    const $scroll = $('<div class="xhs-tab-scroll"></div>');
+    const $nav = $('<div id="pxp19-tab-nav" class="pxp19-injected"></div>');
+    const $scroll = $('<div class="pxp19-tab-scroll"></div>');
 
     primaryTabs.forEach(function (tab) {
       const active = isTabActive(section, tab.key) ? ' active' : '';
-      $scroll.append('<a href="' + tab.href + '" class="xhs-tab' + active + '">' + esc(tab.label) + '</a>');
+      $scroll.append('<a href="' + tab.href + '" class="pxp19-tab' + active + '">' + esc(tab.label) + '</a>');
     });
 
     $nav.append($scroll);
@@ -1089,19 +1089,19 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
       let $btn = null;
       if (!followHidden && $follow.length) {
-        $btn = $('<button type="button" class="xhs-btn xhs-btn-primary xhs-btn-long">' + esc(T('follow')) + '</button>');
+        $btn = $('<button type="button" class="pxp19-btn pxp19-btn-primary pxp19-btn-long">' + esc(T('follow')) + '</button>');
         $btn.on('click', function (e) {
           e.preventDefault();
           $follow.get(0).click();
         });
       } else if (!unfollowHidden && $unfollow.length) {
-        $btn = $('<button type="button" class="xhs-btn xhs-btn-outline-muted xhs-btn-long">' + esc(T('following')) + '</button>');
+        $btn = $('<button type="button" class="pxp19-btn pxp19-btn-outline-muted pxp19-btn-long">' + esc(T('following')) + '</button>');
         $btn.on('click', function (e) {
           e.preventDefault();
           $unfollow.get(0).click();
         });
       } else if ($follow.length) {
-        $btn = $('<button type="button" class="xhs-btn xhs-btn-primary xhs-btn-long">' + esc(T('follow')) + '</button>');
+        $btn = $('<button type="button" class="pxp19-btn pxp19-btn-primary pxp19-btn-long">' + esc(T('follow')) + '</button>');
         $btn.on('click', function (e) {
           e.preventDefault();
           $follow.get(0).click();
@@ -1122,7 +1122,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
   function addMenuLink($menu, href, icon, text) {
     $menu.append(
-      '<a href="' + href + '" class="xhs-menu-item">' +
+      '<a href="' + href + '" class="pxp19-menu-item">' +
         '<i class="fa fa-fw ' + icon + '"></i><span>' + esc(text) + '</span>' +
       '</a>'
     );
@@ -1130,34 +1130,34 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
   function addMenuCustomAction($menu, icon, text, fn) {
     const $item = $(
-      '<button type="button" class="xhs-menu-item">' +
+      '<button type="button" class="pxp19-menu-item">' +
         '<i class="fa fa-fw ' + icon + '"></i><span>' + esc(text) + '</span>' +
       '</button>'
     );
     $item.on('click', function (e) {
       e.preventDefault();
-      $('.xhs-dropdown-menu').removeClass('show');
+      $('.pxp19-dropdown-menu').removeClass('show');
       fn();
     });
     $menu.append($item);
   }
 
   function addMenuDivider($menu) {
-    $menu.append('<div class="xhs-menu-divider"></div>');
+    $menu.append('<div class="pxp19-menu-divider"></div>');
   }
 
   function addMenuAction($menu, $source, icon, text) {
     if (!$source || !$source.length) return;
 
     const $item = $(
-      '<button type="button" class="xhs-menu-item">' +
+      '<button type="button" class="pxp19-menu-item">' +
         '<i class="fa fa-fw ' + icon + '"></i><span>' + esc(text) + '</span>' +
       '</button>'
     );
 
     $item.on('click', function (e) {
       e.preventDefault();
-      $('.xhs-dropdown-menu').removeClass('show');
+      $('.pxp19-dropdown-menu').removeClass('show');
       $source.get(0).click();
     });
 
@@ -1167,7 +1167,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   function addMenuMirrorButtons($menu, $a, $b, icon, textA, textB) {
     if ((!$a || !$a.length) && (!$b || !$b.length)) return;
 
-    const $wrapper = $('<div class="xhs-menu-mirror-slot"></div>');
+    const $wrapper = $('<div class="pxp19-menu-mirror-slot"></div>');
 
     function render() {
       $wrapper.empty();
@@ -1191,14 +1191,14 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       if (!$target) return;
 
       const $item = $(
-        '<button type="button" class="xhs-menu-item">' +
+        '<button type="button" class="pxp19-menu-item">' +
           '<i class="fa fa-fw ' + icon + '"></i><span>' + esc(label) + '</span>' +
         '</button>'
       );
 
       $item.on('click', function (e) {
         e.preventDefault();
-        $('.xhs-dropdown-menu').removeClass('show');
+        $('.pxp19-dropdown-menu').removeClass('show');
         $target.get(0).click();
       });
 
@@ -1238,7 +1238,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     }
 
     if (!editable) {
-      dom.$accountContent.children('.d-flex.justify-content-between.align-items-center.mb-3').addClass('xhs-hidden');
+      dom.$accountContent.children('.d-flex.justify-content-between.align-items-center.mb-3').addClass('pxp19-hidden');
     }
 
     if (section === 'about') {
@@ -1249,24 +1249,24 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
           if ($el.hasClass('account-stats')) return false;
           const txt = norm($el.text());
           if (txt === bio || txt.indexOf('关于我') !== -1) {
-            $el.addClass('xhs-hidden');
+            $el.addClass('pxp19-hidden');
           }
         });
       }
     }
 
-    dom.$stats.find('.card').addClass('xhs-about-card');
+    dom.$stats.find('.card').addClass('pxp19-about-card');
   }
 
   function renderNotesSection(dom) {
     if (getCurrentSection() !== 'topics') return;
     const $content = dom.$accountContent;
-    if (!$content.length || $content.find('.xhs-notes-grid').length) return;
+    if (!$content.length || $content.find('.pxp19-notes-grid').length) return;
 
     const notes = collectNotesFromDom($content);
-    $content.children().not('.xhs-injected').addClass('xhs-notes-original-hidden');
+    $content.children().not('.pxp19-injected').addClass('pxp19-notes-original-hidden');
 
-    const $grid = $('<div class="xhs-notes-grid xhs-injected" aria-live="polite"></div>');
+    const $grid = $('<div class="pxp19-notes-grid pxp19-injected" aria-live="polite"></div>');
     $content.append($grid);
 
     if (notes.length) {
@@ -1274,12 +1274,12 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       return;
     }
 
-    $grid.html('<div class="xhs-notes-empty">' + esc(T('notesLoading')) + '</div>');
+    $grid.html('<div class="pxp19-notes-empty">' + esc(T('notesLoading')) + '</div>');
     fetchNotesFromApi().then(function (apiNotes) {
       if (apiNotes && apiNotes.length) renderNotes($grid, apiNotes);
-      else $grid.html('<div class="xhs-notes-empty">' + esc(T('notesEmpty')) + '</div>');
+      else $grid.html('<div class="pxp19-notes-empty">' + esc(T('notesEmpty')) + '</div>');
     }).catch(function () {
-      $grid.html('<div class="xhs-notes-empty">' + esc(T('notesEmpty')) + '</div>');
+      $grid.html('<div class="pxp19-notes-empty">' + esc(T('notesEmpty')) + '</div>');
     });
   }
 
@@ -1354,16 +1354,16 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     $grid.empty();
     notes.forEach(function (note) {
       const imageHtml = note.image
-        ? '<div class="xhs-note-cover" style="background-image:url(&quot;' + esc(note.image) + '&quot;)"></div>'
-        : '<div class="xhs-note-cover xhs-note-cover-empty"></div>';
+        ? '<div class="pxp19-note-cover" style="background-image:url(&quot;' + esc(note.image) + '&quot;)"></div>'
+        : '<div class="pxp19-note-cover pxp19-note-cover-empty"></div>';
       const excerptHtml = note.excerpt
-        ? '<div class="xhs-note-excerpt">' + esc(note.excerpt).slice(0, 90) + '</div>'
+        ? '<div class="pxp19-note-excerpt">' + esc(note.excerpt).slice(0, 90) + '</div>'
         : '';
       $grid.append(
-        '<a class="xhs-note-card" href="' + esc(note.href) + '" aria-label="' + esc(T('noteOpen')) + '">' +
+        '<a class="pxp19-note-card" href="' + esc(note.href) + '" aria-label="' + esc(T('noteOpen')) + '">' +
           imageHtml +
-          '<div class="xhs-note-body">' +
-            '<div class="xhs-note-title">' + esc(note.title) + '</div>' +
+          '<div class="pxp19-note-body">' +
+            '<div class="pxp19-note-title">' + esc(note.title) + '</div>' +
             excerptHtml +
           '</div>' +
         '</a>'
@@ -1372,10 +1372,10 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   }
 
   function bindGlobalEvents() {
-    $(document).off('.xhsProfile');
-    $(document).on('click.xhsProfile', function (e) {
-      if (!$(e.target).closest('.xhs-menu-wrap').length) {
-        $('.xhs-dropdown-menu').removeClass('show');
+    $(document).off('.pxp19Profile');
+    $(document).on('click.pxp19Profile', function (e) {
+      if (!$(e.target).closest('.pxp19-menu-wrap').length) {
+        $('.pxp19-dropdown-menu').removeClass('show');
       }
     });
   }
