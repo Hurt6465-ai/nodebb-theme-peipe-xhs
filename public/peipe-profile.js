@@ -24,7 +24,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
 
   const PROFILE_ASSETS = Object.assign({
-    
+    cssUrl: '/plugins/nodebb-theme-harmony/peipe-profile/peipe-profile.css',
     i18nBaseUrl: '/plugins/nodebb-theme-harmony/peipe-profile/i18n/',
     i18nDefault: 'zh-CN',
     imageConfig: {
@@ -57,8 +57,13 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   }
 
   function ensureExternalCss() {
-  return;
-}
+    if (document.querySelector('link[data-peipe-profile-css]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = rel(PROFILE_ASSETS.cssUrl);
+    link.setAttribute('data-peipe-profile-css', '1');
+    document.head.appendChild(link);
+  }
 
   function getLocaleCandidates() {
     const raw = String((window.config && window.config.userLang) || document.documentElement.lang || navigator.language || PROFILE_ASSETS.i18nDefault || 'zh-CN');
