@@ -1,1934 +1,1155 @@
+/* Peipe xprofile v19 mobile style. Load this CSS in theme/plugin.json, not from JS. */
+@media (max-width: 768px) {
+  body[class*="page-user"]:not(.pxp19-profile-active):not(.pxp19-profile-disabled) .account {
+    visibility: hidden !important;
+    min-height: 100vh;
+  }
 
-if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
-  URL.canParse = function (url, base) {
-    try {
-      new URL(url, base);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
+  body.pxp19-profile-active .account {
+    visibility: visible !important;
+  }
 }
 
-(function () {
-  'use strict';
-
-  const MOBILE_MAX = 768;
-  const MAX_INIT_RETRIES = 240;
-  const RESIZE_DEBOUNCE_MS = 120;
-
-  let observers = [];
-  let initRaf = 0;
-  let resizeTimer = 0;
-  let pageDomObserver = null;
-
-
-  const PROFILE_ASSETS = Object.assign({
-    i18nBaseUrl: '/plugins/nodebb-theme-peipe-xhs/peipe-xprofile-v19/i18n/',
-    i18nDefault: 'zh-CN',
-    imageConfig: {
-      maxSide: 1080,
-      maxSizeMB: 0.09,
-      quality: 0.58,
-      minCompressBytes: 70 * 1024,
-      useWebp: true,
-      qualities: [0.58, 0.50, 0.44, 0.38, 0.32, 0.26, 0.22]
-    },
-    avatarImageConfig: {
-      maxSide: 512,
-      maxSizeMB: 0.06,
-      quality: 0.56,
-      minCompressBytes: 45 * 1024,
-      useWebp: true,
-      qualities: [0.56, 0.48, 0.40, 0.34, 0.28, 0.22]
-    }
-  }, window.PEIPE_XPROFILE_CONFIG || window.PEIPE_PROFILE_CONFIG || {});
-
-  const DEFAULT_PROFILE_TEXT = {
-    review: '评价',
-    notes: '笔记',
-    followingCount: '关注',
-    followers: '粉丝',
-    views: '浏览',
-    editProfile: '编辑资料',
-    backHome: '返回主页',
-    chat: '聊天',
-    follow: '关注',
-    following: '已关注',
-    more: '更多',
-    settings: '设置',
-    themeSettings: '主题设置',
-    uploadAvatar: '上传头像',
-    uploadCover: '上传背景',
-    resizeCover: '调整背景',
-    removeCover: '移除背景',
-    accountInfo: '账号信息',
-    muteAccount: '禁言账号',
-    unmuteAccount: '解除禁言',
-    banAccount: '封禁账号',
-    unbanAccount: '解除封禁',
-    deleteAccount: '删除账号',
-    deleteContent: '删除内容',
-    deleteAll: '删除账号和内容',
-    reportProfile: '举报资料',
-    reported: '已举报',
-    blockUser: '屏蔽用户',
-    unblockUser: '解除屏蔽',
-    ageSuffix: '岁',
-    compressing: '正在压缩图片...',
-    uploading: '上传中...',
-    notesLoading: '正在加载笔记...',
-    notesEmpty: '还没有笔记',
-    noteOpen: '打开笔记',
-    ratingTitle: '给 TA 评价',
-    ratingPlaceholder: '写一句真实印象，例如：很有耐心，适合练口语。',
-    publishReview: '发布评价',
-    reviewEmpty: '还没有评价',
-    reviewLoading: '正在加载评价...',
-    reviewScore: '综合评分',
-    reviewCount: '人评价',
-    reviewSent: '评价已发布',
-    reviewFail: '评价发布失败',
-    loginFirst: '请先登录',
-    reviewNotEligible: '聊天满 24 小时后才可以评价',
-    partnerProfile: '语伴资料',
-    save: '保存',
-    cancel: '取消',
-    close: '关闭',
-    displayName: '用户名',
-    bio: '介绍',
-    birthday: '出生日期',
-    gender: '性别',
-    genderMale: '男',
-    genderFemale: '女',
-    genderPrivate: '保密',
-    country: '国籍',
-    nativeLanguages: '母语',
-    learningLanguages: '想学语言',
-    heightCm: '身高 cm',
-    weightKg: '体重 kg',
-    education: '学历',
-    job: '职业',
-    relationship: '感情状况',
-    tags: '标签',
-    optional: '选填',
-    student: '在校生',
-    worker: '普通职工',
-    waiter: '服务员',
-    teacher: '老师',
-    police: '警察',
-    unemployed: '无业',
-    single: '单身',
-    dating: '恋爱中',
-    married: '已婚',
-    divorced: '离异',
-    privateValue: '保密',
-    saveOk: '资料已保存',
-    saveFail: '资料保存失败',
-    loadFail: '资料读取失败'
-  };
-
-  let profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_XPROFILE_TEXT || window.PEIPE_XPROFILE_TEXT || window.PEIPE_PROFILE_TEXT || {});
-  let profileI18nPromise = null;
-  let profileAssetsReady = false;
-  let uploadCompressionInstalled = false;
-
-  // Start hiding early when this script loads on a mobile user page.
-  if (window.innerWidth <= MOBILE_MAX && /^\/user\//.test(location.pathname || '')) {
-    document.body.classList.remove('pxp19-profile-disabled');
-    document.body.classList.add('pxp19-profile-booting');
-  }
-
-  function ensureExternalCss() {
-    // CSS is compiled by plugin.json -> scss/peipe-xprofile-v19.scss. Do not inject a second CSS link.
-    return;
-  }
-
-  function rel(path) {
-    const base = (window.config && window.config.relative_path) || '';
-    if (!path) return base || '';
-    if (/^https?:\/\//i.test(path)) return path;
-    if (base && path.indexOf(base + '/') === 0) return path;
-    return base + path;
-  }
-
-  function csrfToken() {
-    return (window.config && (window.config.csrf_token || window.config.csrfToken)) ||
-      ($('meta[name="csrf-token"]').attr('content') || '');
-  }
-
-  function apiFetchJson(url, options) {
-    options = options || {};
-    options.credentials = options.credentials || 'same-origin';
-    options.headers = Object.assign({
-      accept: 'application/json',
-      'x-requested-with': 'XMLHttpRequest'
-    }, options.headers || {});
-
-    return fetch(rel(url), options).then(function (res) {
-      return res.json().catch(function () { return {}; }).then(function (json) {
-        if (!res.ok || (json && json.ok === false)) {
-          const msg = (json && (json.error || json.message || (json.status && json.status.message))) || ('HTTP ' + res.status);
-          const err = new Error(msg);
-          err.status = res.status;
-          err.payload = json;
-          throw err;
-        }
-        return json && (json.response || json.data || json);
-      });
-    });
-  }
-
-  function tryApiEndpoints(endpoints, makeOptions) {
-    let chain = Promise.reject(new Error('start'));
-    endpoints.forEach(function (url) {
-      chain = chain.catch(function () {
-        return apiFetchJson(url, typeof makeOptions === 'function' ? makeOptions(url) : makeOptions);
-      });
-    });
-    return chain;
-  }
-
-  function getLocaleCandidates() {
-    const raw = String(
-      (window.config && (window.config.userLang || window.config.language)) ||
-      document.documentElement.lang ||
-      navigator.language ||
-      PROFILE_ASSETS.i18nDefault ||
-      'zh-CN'
-    );
-    const normalized = raw.replace('_', '-');
-    const short = normalized.split('-')[0];
-    const out = [];
-    [normalized, raw, short, PROFILE_ASSETS.i18nDefault, 'zh-CN', 'zh', 'en-US', 'en'].forEach(function (item) {
-      item = String(item || '').trim();
-      if (item && out.indexOf(item) === -1) out.push(item);
-    });
-    return out;
-  }
-
-  function loadProfileI18n() {
-    if (profileI18nPromise) return profileI18nPromise;
-    const candidates = getLocaleCandidates();
-    let chain = Promise.reject(new Error('start'));
-    candidates.forEach(function (locale) {
-      chain = chain.catch(function () {
-        const cacheKey = (window.config && (window.config['cache-buster'] || window.config.cacheBuster)) || Date.now();
-        return fetch(rel(PROFILE_ASSETS.i18nBaseUrl + locale + '.json?v=' + cacheKey), {
-          credentials: 'same-origin',
-          cache: 'no-store'
-        }).then(function (res) {
-          if (!res.ok) throw new Error('i18n ' + locale + ' ' + res.status);
-          return res.json();
-        });
-      });
-    });
-    profileI18nPromise = chain.then(function (json) {
-      profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_XPROFILE_TEXT || window.PEIPE_PROFILE_TEXT || {}, json || {});
-      profileAssetsReady = true;
-      return profileText;
-    }).catch(function (err) {
-      console.warn('[peipe-xprofile-v19] i18n load failed, using built-in zh-CN fallback', err);
-      profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_XPROFILE_TEXT || window.PEIPE_PROFILE_TEXT || {});
-      profileAssetsReady = true;
-      return profileText;
-    });
-    return profileI18nPromise;
-  }
-
-  function T(key, vars) {
-    let value = profileText && profileText[key];
-    if (!value && window.PEIPE_PROFILE_TEXT) value = window.PEIPE_PROFILE_TEXT[key];
-    if (!value) value = DEFAULT_PROFILE_TEXT[key];
-    value = value || key;
-    if (vars) {
-      Object.keys(vars).forEach(function (name) {
-        value = String(value).replace(new RegExp('\\{\\{' + name + '\\}\\}', 'g'), vars[name]);
-      });
-    }
-    return value;
-  }
-
-  function toastProfile(text) {
-    try {
-      const body = document.body;
-      body.classList.add('pxp19-profile-uploading');
-      body.setAttribute('data-pxp19-uploading-text', text || T('uploading'));
-      clearTimeout(body._xhsUploadToastTimer);
-      body._xhsUploadToastTimer = setTimeout(function () {
-        body.classList.remove('pxp19-profile-uploading');
-        body.removeAttribute('data-pxp19-uploading-text');
-      }, 1800);
-    } catch (e) {}
-  }
-
-  function fileExt(file) {
-    const name = String(file && file.name || '').toLowerCase();
-    const m = name.match(/\.([a-z0-9]+)$/);
-    return m ? m[1] : '';
-  }
-
-  function isCompressibleImage(file) {
-    if (!file) return false;
-    const type = String(file.type || '').toLowerCase();
-    const ext = fileExt(file);
-    if (/gif|svg|heic|heif/i.test(type) || /^(gif|svg|heic|heif)$/i.test(ext)) return false;
-    if (/^image\//i.test(type)) return true;
-    return /^(jpg|jpeg|png|webp)$/i.test(ext);
-  }
-
-  function canEncode(type) {
-    return new Promise(function (resolve) {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 1;
-        canvas.height = 1;
-        if (!canvas.toBlob) return resolve(false);
-        canvas.toBlob(function (blob) { resolve(!!blob && blob.type === type); }, type, 0.8);
-      } catch (e) { resolve(false); }
-    });
-  }
-
-  function imageTargetBytes(cfg) {
-    return Math.max(28 * 1024, Math.round(Number(cfg.maxSizeMB || 0.09) * 1024 * 1024));
-  }
-
-  function extForMime(type) {
-    type = String(type || '').toLowerCase();
-    if (type === 'image/webp') return '.webp';
-    if (type === 'image/png') return '.png';
-    return '.jpg';
-  }
-
-  function loadImageFromFile(file) {
-    return new Promise(function (resolve, reject) {
-      if (!file) return reject(new Error('empty file'));
-      function fallback() {
-        const img = new Image();
-        const url = URL.createObjectURL(file);
-        img.onload = function () {
-          URL.revokeObjectURL(url);
-          resolve({
-            width: img.naturalWidth || img.width,
-            height: img.naturalHeight || img.height,
-            draw: function (ctx, w, h) { ctx.drawImage(img, 0, 0, w, h); },
-            close: function () {}
-          });
-        };
-        img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode failed')); };
-        img.src = url;
-      }
-      if (window.createImageBitmap) {
-        window.createImageBitmap(file).then(function (bitmap) {
-          resolve({
-            width: bitmap.width,
-            height: bitmap.height,
-            draw: function (ctx, w, h) { ctx.drawImage(bitmap, 0, 0, w, h); },
-            close: function () { try { bitmap.close && bitmap.close(); } catch (e) {} }
-          });
-        }).catch(fallback);
-      } else {
-        fallback();
-      }
-    });
-  }
-
-  function canvasToBlob(canvas, type, quality) {
-    return new Promise(function (resolve) { canvas.toBlob(resolve, type, quality); });
-  }
-
-  function makeCompressedFile(original, blob, type) {
-    if (!blob || !blob.size) return original;
-    const base = String(original && original.name || ('image-' + Date.now())).replace(/\.[^.]+$/, '');
-    try { return new File([blob], base + extForMime(type), { type: type, lastModified: Date.now() }); }
-    catch (e) { blob.name = base + extForMime(type); return blob; }
-  }
-
-  function compressImageFile(file, cfg) {
-    cfg = Object.assign({}, PROFILE_ASSETS.imageConfig, cfg || {});
-    if (!isCompressibleImage(file)) return Promise.resolve(file);
-    if (Number(file.size || 0) > 0 && Number(file.size || 0) < Number(cfg.minCompressBytes || 0)) return Promise.resolve(file);
-
-    return canEncode('image/webp').then(function (webp) {
-      const type = cfg.useWebp && webp ? 'image/webp' : 'image/jpeg';
-      const targetBytes = imageTargetBytes(cfg);
-      return loadImageFromFile(file).then(function (img) {
-        const w = img.width || 1;
-        const h = img.height || 1;
-        const maxSide = Number(cfg.maxSide || 1080);
-        const scale = Math.min(1, maxSide / Math.max(w, h));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(w * scale));
-        canvas.height = Math.max(1, Math.round(h * scale));
-        const ctx = canvas.getContext('2d');
-        if (!ctx || !canvas.toBlob) return file;
-        img.draw(ctx, canvas.width, canvas.height);
-        img.close && img.close();
-
-        const qualities = Array.isArray(cfg.qualities) && cfg.qualities.length ? cfg.qualities : [cfg.quality || 0.58, 0.50, 0.44, 0.38, 0.32, 0.26, 0.22];
-        let best = null;
-        let chain = Promise.resolve();
-        qualities.forEach(function (q) {
-          chain = chain.then(function () {
-            if (best && best.size <= targetBytes) return best;
-            return canvasToBlob(canvas, type, Number(q)).then(function (blob) {
-              if (blob && blob.size) best = blob;
-              return best;
-            });
-          });
-        });
-        return chain.then(function () {
-          if (!best || !best.size) return file;
-          if (Number(file.size || 0) && best.size >= Number(file.size || 0) * 0.98) return file;
-          return makeCompressedFile(file, best, type);
-        });
-      });
-    }).catch(function (err) {
-      console.warn('[peipe-xprofile-v19] image compression skipped', err);
-      return file;
-    });
-  }
-
-  function shouldUseAvatarConfig(url) {
-    const s = String(url || '').toLowerCase();
-    return /avatar|picture|profile|user/.test(s);
-  }
-
-  function cloneAndCompressFormData(fd, url) {
-    if (!fd || fd.__pxp19ProfileCompressed) return Promise.resolve(fd);
-    const cfg = shouldUseAvatarConfig(url) ? PROFILE_ASSETS.avatarImageConfig : PROFILE_ASSETS.imageConfig;
-    const next = new FormData();
-    const tasks = [];
-    fd.forEach(function (value, key) {
-      if (value instanceof File && isCompressibleImage(value)) {
-        tasks.push(compressImageFile(value, cfg).then(function (compressed) {
-          next.append(key, compressed, compressed.name || value.name || 'image.jpg');
-        }));
-      } else if (value instanceof Blob && value.type && /^image\//i.test(value.type)) {
-        tasks.push(compressImageFile(value, cfg).then(function (compressed) {
-          next.append(key, compressed, compressed.name || 'image.jpg');
-        }));
-      } else {
-        next.append(key, value);
-      }
-    });
-    return Promise.all(tasks).then(function () {
-      try { Object.defineProperty(next, '__pxp19ProfileCompressed', { value: true }); } catch (e) { next.__pxp19ProfileCompressed = true; }
-      return next;
-    });
-  }
-
-  function installUploadCompressionPatch() {
-    if (uploadCompressionInstalled) return;
-    uploadCompressionInstalled = true;
-
-    if (window.fetch && !window.fetch.__pxp19ProfileCompressionPatched) {
-      const rawFetch = window.fetch;
-      const patchedFetch = function (input, init) {
-        init = init || {};
-        const url = typeof input === 'string' ? input : (input && input.url) || '';
-        if (init.body instanceof FormData) {
-          toastProfile(T('compressing'));
-          return cloneAndCompressFormData(init.body, url).then(function (body) {
-            init.body = body;
-            toastProfile(T('uploading'));
-            return rawFetch.call(this, input, init);
-          }).catch(function () {
-            return rawFetch.call(this, input, init);
-          });
-        }
-        return rawFetch.apply(this, arguments);
-      };
-      patchedFetch.__pxp19ProfileCompressionPatched = true;
-      window.fetch = patchedFetch;
-    }
-
-    if (window.XMLHttpRequest && !window.XMLHttpRequest.prototype.__pxp19ProfileCompressionPatched) {
-      const rawOpen = window.XMLHttpRequest.prototype.open;
-      const rawSend = window.XMLHttpRequest.prototype.send;
-      window.XMLHttpRequest.prototype.open = function (method, url) {
-        this.__pxp19ProfileUploadUrl = url;
-        return rawOpen.apply(this, arguments);
-      };
-      window.XMLHttpRequest.prototype.send = function (body) {
-        if (body instanceof FormData && !body.__pxp19ProfileCompressed) {
-          const xhr = this;
-          toastProfile(T('compressing'));
-          cloneAndCompressFormData(body, xhr.__pxp19ProfileUploadUrl || '').then(function (nextBody) {
-            toastProfile(T('uploading'));
-            rawSend.call(xhr, nextBody);
-          }).catch(function () {
-            rawSend.call(xhr, body);
-          });
-          return;
-        }
-        return rawSend.apply(this, arguments);
-      };
-      window.XMLHttpRequest.prototype.__pxp19ProfileCompressionPatched = true;
-    }
-  }
-
-  $(window).on('action:ajaxify.end', function () {
-    if (!isAccountPage()) {
-      cleanupInjected();
-      restoreGlobalUI();
-      document.body.classList.add('pxp19-profile-disabled');
-      return;
-    }
-    scheduleInit();
-  });
-
-  $(document).ready(function () {
-    if (location.pathname.indexOf('/user/') === 0) {
-      scheduleInit();
-    }
-  });
-
-  $(window).on('resize', function () {
-    if (!isAccountPage()) return;
-
-    if (resizeTimer) {
-      clearTimeout(resizeTimer);
-      resizeTimer = 0;
-    }
-
-    resizeTimer = setTimeout(function () {
-      resizeTimer = 0;
-      if (window.innerWidth > MOBILE_MAX) {
-        cleanupInjected();
-        restoreGlobalUI();
-      } else {
-        scheduleInit();
-      }
-    }, RESIZE_DEBOUNCE_MS);
-  });
-
-  function isAccountPage() {
-    const data = window.ajaxify && window.ajaxify.data;
-    const tpl = data && data.template && data.template.name;
-    if (tpl && tpl.indexOf('account/') === 0) return true;
-    return $('body').is('[class*="page-user"]');
-  }
-
-  function scheduleInit() {
-    if (initRaf) {
-      cancelAnimationFrame(initRaf);
-      initRaf = 0;
-    }
-
-    if (window.innerWidth > MOBILE_MAX) {
-      cleanupInjected();
-      restoreGlobalUI();
-      document.body.classList.add('pxp19-profile-disabled');
-      return;
-    }
-
-    if (!isAccountPage()) {
-      cleanupInjected();
-      restoreGlobalUI();
-      document.body.classList.add('pxp19-profile-disabled');
-      return;
-    }
-
-    ensureExternalCss();
-    installUploadCompressionPatch();
-    document.body.classList.remove('pxp19-profile-disabled');
-    document.body.classList.add('pxp19-profile-booting');
-
-    // NodeBB ajaxify 在手机 Chrome / Kiwi 下有时先触发 action:ajaxify.end，
-    // 后把 .account 真实 DOM 塞进 #content。原版只等约 1 秒，慢网下会错过，
-    // 所以这里改成：更宽松查找 + MutationObserver 兜底。
-    let tries = 0;
-
-    function findAccountAndTop() {
-      const $account = $('.account').first();
-      if (!$account.length) return null;
-
-      let $top = $account
-        .find('> .d-flex.flex-column.flex-md-row.gap-2.w-100.pb-4.mb-4.mt-2.border-bottom')
-        .first();
-
-      // Harmony 版本 / 编译后 class 可能有变化，不能只卡死一条 class。
-      if (!$top.length) {
-        $top = $account.find('.avatar-wrapper').first().closest('.d-flex').first();
-      }
-      if (!$top.length) {
-        $top = $account.find('[component="avatar/picture"]').first().closest('.d-flex').first();
-      }
-      if (!$top.length) {
-        $top = $account.children('.d-flex').filter(function () {
-          return $(this).find('.avatar-wrapper,.fullname,.username').length > 0;
-        }).first();
-      }
-      if (!$top.length) return null;
-      return { $account: $account, $top: $top };
-    }
-
-    function boot(found) {
-      if (pageDomObserver) {
-        try { pageDomObserver.disconnect(); } catch (e) {}
-        pageDomObserver = null;
-      }
-      initXiaohongshuProfile(found.$account, found.$top);
-    }
-
-    function attempt() {
-      tries += 1;
-
-      if (window.innerWidth > MOBILE_MAX || !isAccountPage()) {
-        cleanupInjected();
-        restoreGlobalUI();
-        return;
-      }
-
-      const found = findAccountAndTop();
-      if (found) {
-        boot(found);
-        return;
-      }
-
-      if (tries < MAX_INIT_RETRIES) {
-        initRaf = requestAnimationFrame(attempt);
-      } else {
-        document.body.classList.remove('pxp19-profile-booting');
-        document.body.classList.add('pxp19-profile-disabled');
-      }
-    }
-
-    // DOM 还没来时主动监听，不需要用户刷新。
-    if (!pageDomObserver) {
-      const host = document.getElementById('content') || document.querySelector('main#panel') || document.body;
-      pageDomObserver = new MutationObserver(function () {
-        const found = findAccountAndTop();
-        if (found && profileAssetsReady) boot(found);
-      });
-      pageDomObserver.observe(host, { childList: true, subtree: true });
-    }
-
-    loadProfileI18n().finally(function () {
-      initRaf = requestAnimationFrame(attempt);
-    });
-  }
-
-  function initXiaohongshuProfile($account, $top) {
-    cleanupInjected();
-    if (window.innerWidth > MOBILE_MAX) return;
-
-    const dom = getDomCache($account, $top);
-    if (!dom.$account.length || !dom.$top.length) return;
-
-    ensureExternalCss();
-    hideGlobalNavigation();
-    hideOriginalElements(dom);
-    buildProfileShell(dom);
-    tweakContentArea(dom);
-    bindGlobalEvents();
-    document.body.classList.add('pxp19-profile-ready');
-    document.body.classList.remove('pxp19-profile-booting', 'pxp19-profile-disabled');
-  }
-
-  function cleanupInjected() {
-    observers.forEach(function (obs) {
-      try {
-        obs.disconnect();
-      } catch (e) {}
-    });
-    observers = [];
-
-    if (initRaf) {
-      cancelAnimationFrame(initRaf);
-      initRaf = 0;
-    }
-
-    if (pageDomObserver) {
-      try { pageDomObserver.disconnect(); } catch (e) {}
-      pageDomObserver = null;
-    }
-
-    $('#pxp19-profile-shell, #pxp19-profile-header, #pxp19-profile-topmenu, #pxp19-tab-nav, .pxp19-injected, #xhs-profile-shell, #xhs-profile-header, #xhs-profile-topmenu, #xhs-tab-nav, .xhs-injected').remove();
-
-    $('.pxp19-original-top-hidden, .xhs-original-top-hidden').removeClass('pxp19-original-top-hidden xhs-original-top-hidden');
-    $('.pxp19-review-original-hidden, .pxp19-notes-original-hidden').removeClass('pxp19-review-original-hidden pxp19-notes-original-hidden');
-    $('.pxp19-hidden, .xhs-hidden').removeClass('pxp19-hidden xhs-hidden');
-    $('.pxp19-cover-raw, .xhs-cover-raw').removeClass('pxp19-cover-raw xhs-cover-raw');
-    $('.pxp19-about-card, .xhs-about-card').removeClass('pxp19-about-card xhs-about-card');
-    $('.pxp19-account-layout, .xhs-account-layout').removeClass('pxp19-account-layout xhs-account-layout');
-
-    $(document).off('.pxp19Profile');
-  }
-
-  function restoreGlobalUI() {
-    $('[component="bottombar"]').show();
-    $('.sidebar-left, .sidebar-right').show();
-    $('main#panel').css({ 'margin-top': '', 'padding-top': '' });
-    $('.layout-container').css({ 'padding-bottom': '' });
-    $('body').removeClass('pxp19-profile-active pxp19-profile-ready pxp19-profile-booting xhs-profile-active xhs-profile-ready xhs-profile-booting');
-    $('body').addClass('pxp19-profile-disabled');
-  }
-
-  function getDomCache($account, $top) {
-    return {
-      $account: $account,
-      $top: $top,
-      $cover: $account.find('.cover[component="account/cover"]').first(),
-      $avatarWrapper: $top.find('.avatar-wrapper').first(),
-      $avatarImg: $top.find('.avatar-wrapper img[component="avatar/picture"]').first(),
-      $infoCol: $top.find('.d-flex.flex-column.gap-1').first(),
-      $fullname: $top.find('.fullname').first(),
-      $username: $top.find('.username').first(),
-      $originAction: $top.find('.flex-shrink-0.d-flex.gap-1.align-self-stretch.align-self-md-start.justify-content-end').first(),
-      $sidebarNav: $account.find('.flex-shrink-0.pe-2.border-end-md.text-sm.mb-3.flex-basis-md-200').first(),
-      $accountContent: $account.find('.account-content').first(),
-      $stats: $account.find('.account-stats').first(),
-      $coverControls: $account.find('.cover .controls').first(),
-      $coverUpload: $account.find('.cover .upload').first(),
-      $coverResize: $account.find('.cover .resize').first(),
-      $coverRemove: $account.find('.cover .remove').first(),
-      $coverSave: $account.find('.cover .save').first(),
-      $coverIndicator: $account.find('.cover .indicator').first(),
-      $avatarChangeAnchor: $account.find('.avatar-wrapper a[component="profile/change/picture"]').first(),
-      $avatarChangeWrap: $account.find('.avatar-wrapper[component="profile/change/picture"]').first(),
-      $follow: $top.find('[component="account/follow"]').first(),
-      $unfollow: $top.find('[component="account/unfollow"]').first(),
-      $chat: $top.find('[component="account/chat"]').first(),
-      $newChat: $top.find('[component="account/new-chat"]').first(),
-      $flag: $account.find('[component="account/flag"]').first(),
-      $alreadyFlagged: $account.find('[component="account/already-flagged"]').first(),
-      $block: $account.find('[component="account/block"]').first(),
-      $unblock: $account.find('[component="account/unblock"]').first(),
-      $ban: $account.find('[component="account/ban"]').first(),
-      $unban: $account.find('[component="account/unban"]').first(),
-      $mute: $account.find('[component="account/mute"]').first(),
-      $unmute: $account.find('[component="account/unmute"]').first(),
-      $deleteAccount: $account.find('[component="account/delete-account"]').first(),
-      $deleteContent: $account.find('[component="account/delete-content"]').first(),
-      $deleteAll: $account.find('[component="account/delete-all"]').first(),
-      $infoLink: $account.find('a[href$="/info"]').first(),
-      $themeLink: $account.find('a[href$="/theme"]').first(),
-      $settingsLink: $account.find('a[href$="/settings"]').first(),
-      $editLink: $account.find('a[href$="/edit"]').first()
-    };
-  }
-
-  function getViewedSlug() {
-    return location.pathname.split('/').filter(Boolean)[1] || '';
-  }
-
-  function getCurrentSection() {
-    return location.pathname.split('/').filter(Boolean)[2] || 'about';
-  }
-
-  function isOwnProfile() {
-    const me = window.app && window.app.user;
-    const slug = getViewedSlug();
-
-    if (!me || !slug) return false;
-
-    const current = String(slug).toLowerCase();
-    const mySlug = String(me.userslug || '').toLowerCase();
-    const myName = String(me.username || '').toLowerCase();
-
-    return current === mySlug || current === myName;
-  }
-
-  function isAdminViewer() {
-    const me = window.app && window.app.user;
-    return !!(me && (me.isAdmin || me.isGlobalMod));
-  }
-
-  function isEditableSection() {
-    const section = getCurrentSection();
-    return ['edit', 'settings', 'theme', 'info'].indexOf(section) !== -1;
-  }
-
-  function getProfileData() {
-    const d = window.ajaxify && window.ajaxify.data;
-    if (!d) return {};
-    if (d.username || d.userslug) return d;
-    if (d.user && (d.user.username || d.user.userslug)) return d.user;
-    return {};
-  }
-
-  function getDisplayName() {
-    const u = getProfileData();
-    return norm(u.fullname || u.displayname || u.username || '') ||
-      norm($('.fullname').first().text()) ||
-      norm($('.username').first().text()).replace(/^@/, '') ||
-      getViewedSlug();
-  }
-
-  function getAvatarSrc() {
-    const u = getProfileData();
-    return u.picture || u.uploadedpicture || '';
-  }
-
-  function getAvatarIcon() {
-    const u = getProfileData();
-    return {
-      text: (u['icon:text'] || u.username || '?').charAt(0).toUpperCase(),
-      bg: u['icon:bgColor'] || '#795548'
-    };
-  }
-
-  function getCoverUrl() {
-    const u = getProfileData();
-    return u['cover:url'] || '';
-  }
-
-  function getBioText() {
-    const u = getProfileData();
-    return stripHtml(u.aboutme || u.signature || '');
-  }
-
-  function getGenderSymbol() {
-    const u = getProfileData();
-    const g = norm(u.gender).toLowerCase();
-    if (!g) return '';
-    if (g === '男' || /^m(ale)?$/.test(g)) return '♂';
-    if (g === '女' || /^f(emale)?$/.test(g)) return '♀';
-    return '';
-  }
-
-  function getAge() {
-    const u = getProfileData();
-    if (u.age) return String(u.age);
-    if (!u.birthday) return '';
-    const birth = new Date(u.birthday);
-    if (isNaN(birth.getTime())) return '';
-    const now = new Date();
-    let y = now.getFullYear() - birth.getFullYear();
-    const m = now.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) y -= 1;
-    return y > 0 ? String(y) : '';
-  }
-
-  function getCountryText() {
-    const u = getProfileData();
-    return norm(u.language_flag || u.country || u.nationality || '');
-  }
-
-  function getCountryFlagEmoji() {
-    const raw = getCountryText();
-    if (!raw) return '';
-
-    const pairs = [
-      ['缅甸', '🇲🇲'], ['myanmar', '🇲🇲'], ['burma', '🇲🇲'],
-      ['中国', '🇨🇳'], ['china', '🇨🇳'],
-      ['新加坡', '🇸🇬'], ['singapore', '🇸🇬'],
-      ['泰国', '🇹🇭'], ['thailand', '🇹🇭'],
-      ['老挝', '🇱🇦'], ['laos', '🇱🇦'],
-      ['越南', '🇻🇳'], ['vietnam', '🇻🇳'],
-      ['柬埔寨', '🇰🇭'], ['cambodia', '🇰🇭'],
-      ['马来西亚', '🇲🇾'], ['malaysia', '🇲🇾'],
-      ['菲律宾', '🇵🇭'], ['philippines', '🇵🇭'],
-      ['日本', '🇯🇵'], ['japan', '🇯🇵'],
-      ['韩国', '🇰🇷'], ['korea', '🇰🇷'],
-      ['美国', '🇺🇸'], ['usa', '🇺🇸'], ['united states', '🇺🇸'],
-      ['英国', '🇬🇧'], ['uk', '🇬🇧'], ['united kingdom', '🇬🇧'],
-      ['法国', '🇫🇷'], ['france', '🇫🇷'],
-      ['德国', '🇩🇪'], ['germany', '🇩🇪'],
-      ['印度', '🇮🇳'], ['india', '🇮🇳']
-    ];
-
-    const lower = raw.toLowerCase();
-    for (let i = 0; i < pairs.length; i += 1) {
-      if (lower.indexOf(pairs[i][0]) !== -1) return pairs[i][1];
-    }
-    return '';
-  }
-
-  function getLanguagePairInfo() {
-    const u = getProfileData();
-
-    function parse(v) {
-      if (Array.isArray(v)) return v.filter(Boolean);
-      const s = String(v || '').trim();
-      if (!s || s === '[]') return [];
-      try {
-        const p = JSON.parse(s);
-        if (Array.isArray(p)) return p.filter(Boolean);
-      } catch (e) {}
-      return s.split(/[\/,\u3001|]+/).map(norm).filter(Boolean);
-    }
-
-    function toCode(v) {
-      const r = norm(v).toLowerCase();
-      const map = {
-        '中文': 'ZH', '汉语': 'ZH', '普通话': 'ZH', 'chinese': 'ZH', 'mandarin': 'ZH',
-        '英语': 'EN', '英文': 'EN', 'english': 'EN',
-        '缅甸语': 'MY', '缅语': 'MY', '缅文': 'MY', 'burmese': 'MY', 'myanmar': 'MY',
-        '日语': 'JA', 'japanese': 'JA',
-        '韩语': 'KO', 'korean': 'KO',
-        '泰语': 'TH', 'thai': 'TH',
-        '越南语': 'VI', 'vietnamese': 'VI',
-        '法语': 'FR', 'french': 'FR',
-        '德语': 'DE', 'german': 'DE',
-        '西班牙语': 'ES', 'spanish': 'ES',
-        '老挝语': 'LO', 'lao': 'LO',
-        '高棉语': 'KM', 'khmer': 'KM',
-        '马来语': 'MS', 'malay': 'MS',
-        '菲律宾语': 'TL', 'tagalog': 'TL'
-      };
-      if (map[r]) return map[r];
-      if (/^[a-z]{2,4}$/i.test(r)) return r.toUpperCase();
-      return norm(v).slice(0, 3).toUpperCase();
-    }
-
-    const native = [].concat(
-      parse(u.language_fluent),
-      parse(u.native_language),
-      parse(u.language_native)
-    );
-
-    const learn = [].concat(
-      parse(u.language_learning),
-      parse(u.learning_language),
-      parse(u.language_target)
-    );
-
-    const nativeText = unique(native.map(toCode).filter(Boolean)).join('/');
-    const learnText = unique(learn.map(toCode).filter(Boolean)).join('/');
-
-    return {
-      nativeText: nativeText,
-      learnText: learnText,
-      text: nativeText && learnText
-        ? nativeText + ' ⇄ ' + learnText
-        : (nativeText || learnText || '')
-    };
-  }
-
-  function renderLanguagePairHtml(info) {
-    if (!info || !info.text) return '';
-
-    if (info.nativeText && info.learnText) {
-      return (
-        '<span class="pxp19-lang-part">' + esc(info.nativeText) + '</span>' +
-        '<span class="pxp19-lang-arrow" aria-hidden="true">⇄</span>' +
-        '<span class="pxp19-lang-part">' + esc(info.learnText) + '</span>'
-      );
-    }
-
-    return '<span class="pxp19-lang-part">' + esc(info.text) + '</span>';
-  }
-
-  function pickStat(keys) {
-    const u = getProfileData();
-    for (let i = 0; i < keys.length; i += 1) {
-      if (u[keys[i]] !== undefined && u[keys[i]] !== null) return String(u[keys[i]]);
-    }
-    return '0';
-  }
-
-  function getFollowingCount() {
-    return pickStat(['followingCount', 'following', 'followings']);
-  }
-
-  function getFollowersCount() {
-    return pickStat(['followerCount', 'followers', 'followersCount']);
-  }
-
-  function getViewsCount() {
-    return pickStat(['profileviews', 'profileViews', 'views']);
-  }
-
-  function hideGlobalNavigation() {
-    $('body').addClass('pxp19-profile-active');
-  }
-
-  function hideOriginalElements(dom) {
-    dom.$top.addClass('pxp19-original-top-hidden');
-    dom.$sidebarNav.addClass('pxp19-hidden');
-    dom.$originAction.addClass('pxp19-hidden');
-    dom.$cover.addClass('pxp19-cover-raw');
-
-    const $layoutRow = dom.$sidebarNav.parent();
-    if ($layoutRow.length) {
-      $layoutRow.addClass('pxp19-account-layout');
-    }
-  }
-
-  function buildProfileShell(dom) {
-    const displayName = getDisplayName();
-    const avatarSrc = getAvatarSrc();
-    const icon = getAvatarIcon();
-    const coverUrl = getCoverUrl();
-    const bio = getBioText();
-    const gender = getGenderSymbol();
-    const age = getAge();
-    const langInfo = getLanguagePairInfo();
-    const country = getCountryText();
-    const avatarFlag = getCountryFlagEmoji();
-    const bioIsMyanmar = containsMyanmar(bio);
-    const nameIsMyanmar = containsMyanmar(displayName);
-
-    let avatarHtml;
-    if (avatarSrc) {
-      avatarHtml = '<img class="pxp19-avatar-img" src="' + esc(avatarSrc) + '" alt="' + esc(displayName) + '">';
-    } else {
-      avatarHtml = '<div class="pxp19-avatar-fallback" style="background:' + esc(icon.bg) + '">' + esc(icon.text) + '</div>';
-    }
-
-    let uploadAvatarHtml = '';
-    if (isOwnProfile()) {
-      uploadAvatarHtml =
-        '<button type="button" class="pxp19-avatar-upload-btn" id="xhsAvatarUploadBtn" aria-label="' + esc(T('uploadAvatar')) + '">' +
-          '<i class="fa fa-camera"></i>' +
-        '</button>';
-    }
-
-    const avatarFlagHtml = avatarFlag
-      ? '<span class="pxp19-avatar-flag">' + avatarFlag + '</span>'
-      : '';
-
-    let genderAgeHtml = '';
-    if (gender || age) {
-      const gaText = [gender, age ? age + T('ageSuffix') : ''].filter(Boolean).join(' ');
-      genderAgeHtml = '<span class="pxp19-gender-tag">' + esc(gaText) + '</span>';
-    }
-
-    const langHtml = langInfo.text
-      ? '<div class="pxp19-language-line' + (containsMyanmar(langInfo.text) ? ' pxp19-mm-text' : '') + '">' + renderLanguagePairHtml(langInfo) + '</div>'
-      : '';
-
-    const countryHtml = country
-      ? '<div class="pxp19-country-line' + (containsMyanmar(country) ? ' pxp19-mm-text' : '') + '"><i class="fa fa-map-marker-alt"></i><span>' + esc(country) + '</span></div>'
-      : '';
-
-    const bioHtml = bio
-      ? '<div class="pxp19-bio' + (bioIsMyanmar ? ' pxp19-mm-bio' : '') + '">' + esc(bio) + '</div>'
-      : '';
-
-    const headerClasses = ['pxp19-injected'];
-    if (!bio) headerClasses.push('pxp19-no-bio');
-
-    const $shell = $('<div id="pxp19-profile-shell" class="pxp19-injected"></div>');
-    const $header = $(
-      '<div id="pxp19-profile-header" class="' + headerClasses.join(' ') + '">' +
-        '<div class="pxp19-cover"></div>' +
-        '<div class="pxp19-cover-shade"></div>' +
-        '<div class="pxp19-header-overlay">' +
-          '<div class="pxp19-user-main">' +
-            '<div class="pxp19-avatar-wrap">' +
-              '<div class="pxp19-avatar-circle">' + avatarHtml + '</div>' +
-              avatarFlagHtml +
-              uploadAvatarHtml +
-            '</div>' +
-            '<div class="pxp19-user-right">' +
-              '<div class="pxp19-name-row">' +
-                '<span class="pxp19-display-name' + (nameIsMyanmar ? ' pxp19-mm-name' : '') + '">' + esc(displayName) + '</span>' +
-                genderAgeHtml +
-              '</div>' +
-              langHtml +
-              countryHtml +
-            '</div>' +
-          '</div>' +
-          bioHtml +
-        '</div>' +
-      '</div>'
-    );
-
-    if (coverUrl && coverUrl.indexOf('cover-default') === -1) {
-      $header.find('.pxp19-cover').css('background-image', 'url("' + cssUrlEscape(coverUrl) + '")');
-    } else {
-      $header.find('.pxp19-cover').css('background', 'linear-gradient(135deg, #ff826d 0%, #ff2442 48%, #d81b60 100%)');
-    }
-
-    dom.$top.before($shell);
-    $shell.append($header);
-
-    buildStatsRow($header);
-    buildActionButtons(dom, $header);
-    buildTopMenu(dom, $header);
-    buildTabNav($shell);
-
-    if (isOwnProfile()) {
-      $('#xhsAvatarUploadBtn').on('click', function (e) {
-        e.preventDefault();
-        triggerAvatarUpload(dom);
-      });
-    }
-  }
-
-  function buildStatsRow($header) {
-    const slug = getViewedSlug();
-    const stats = [
-      { num: getFollowingCount(), label: T('followingCount'), href: '/user/' + slug + '/following' },
-      { num: getFollowersCount(), label: T('followers'), href: '/user/' + slug + '/followers' },
-      { num: getViewsCount(), label: T('views'), href: '' }
-    ];
-
-    const $row = $('<div id="pxp19-stats-row" class="pxp19-injected"></div>');
-    stats.forEach(function (s) {
-      const tag = s.href ? 'a' : 'div';
-      const hrefAttr = s.href ? ' href="' + s.href + '"' : '';
-      $row.append(
-        '<' + tag + ' class="pxp19-stat-item"' + hrefAttr + '>' +
-          '<span class="pxp19-stat-num">' + esc(s.num) + '</span>' +
-          '<span class="pxp19-stat-label">' + esc(s.label) + '</span>' +
-        '</' + tag + '>'
-      );
-    });
-
-    $header.find('.pxp19-header-overlay').append($row);
-  }
-
-  function buildActionButtons(dom, $header) {
-    const own = isOwnProfile();
-    const editable = isEditableSection();
-    const $bar = $('<div id="pxp19-action-bar" class="pxp19-injected"></div>');
-
-    if (own) {
-      if (editable) {
-        const $viewBtn = $('<a href="/user/' + getViewedSlug() + '" class="pxp19-btn pxp19-btn-outline pxp19-btn-long">' + esc(T('backHome')) + '</a>');
-        $bar.append($viewBtn);
-      } else {
-        const $editBtn = $('<button type="button" class="pxp19-btn pxp19-btn-primary pxp19-btn-long pxp19-edit-partner-profile">' + esc(T('editProfile')) + '</button>');
-        $bar.append($editBtn);
-      }
-    } else {
-      const $followSlot = $('<div class="pxp19-btn-slot pxp19-btn-long-slot"></div>');
-      mirrorFollowState($followSlot, dom.$follow, dom.$unfollow);
-      $bar.append($followSlot);
-
-      if (dom.$chat.length) {
-        const $chatBtn = $('<button type="button" class="pxp19-btn pxp19-btn-outline pxp19-btn-long">' + esc(T('chat')) + '</button>');
-        $chatBtn.on('click', function (e) {
-          e.preventDefault();
-          dom.$chat.get(0).click();
-        });
-        $bar.append($chatBtn);
-      }
-    }
-
-    $header.find('.pxp19-header-overlay').append($bar);
-  }
-
-  function buildTopMenu(dom, $header) {
-    const own = isOwnProfile();
-    const admin = isAdminViewer();
-    const $wrap = $('<div id="pxp19-profile-topmenu" class="pxp19-injected"></div>');
-    const $menuWrap = $('<div class="pxp19-menu-wrap pxp19-topmenu-wrap"></div>');
-    const $btn = $('<button type="button" class="pxp19-topmenu-btn" aria-label="' + esc(T('more')) + '"><i class="fa fa-ellipsis-h"></i></button>');
-    const $menu = $('<div class="pxp19-dropdown-menu pxp19-topmenu-dropdown" id="pxp19-topmenu-dropdown"></div>');
-
-    if (own) {
-      addMenuLink($menu, '/user/' + getViewedSlug() + '/settings', 'fa-gear', T('settings'));
-      addMenuLink($menu, '/user/' + getViewedSlug() + '/theme', 'fa-paint-brush', T('themeSettings'));
-      addMenuDivider($menu);
-      addMenuCustomAction($menu, 'fa-camera', T('uploadAvatar'), function () {
-        triggerAvatarUpload(dom);
-      });
-      addMenuAction($menu, dom.$coverUpload, 'fa-image', T('uploadCover'));
-      addMenuAction($menu, dom.$coverResize, 'fa-arrows-alt', T('resizeCover'));
-      addMenuAction($menu, dom.$coverRemove, 'fa-trash', T('removeCover'));
-    } else {
-      if (admin) {
-        addMenuLink($menu, '/user/' + getViewedSlug() + '/info', 'fa-id-card', T('accountInfo'));
-        addMenuMirrorButtons($menu, dom.$mute, dom.$unmute, 'fa-volume-xmark', T('muteAccount'), T('unmuteAccount'));
-        addMenuMirrorButtons($menu, dom.$ban, dom.$unban, 'fa-ban', T('banAccount'), T('unbanAccount'));
-        addMenuAction($menu, dom.$deleteAccount, 'fa-trash', T('deleteAccount'));
-        addMenuAction($menu, dom.$deleteContent, 'fa-eraser', T('deleteContent'));
-        addMenuAction($menu, dom.$deleteAll, 'fa-bomb', T('deleteAll'));
-        addMenuDivider($menu);
-      }
-      addMenuMirrorButtons($menu, dom.$flag, dom.$alreadyFlagged, 'fa-flag', T('reportProfile'), T('reported'));
-      addMenuMirrorButtons($menu, dom.$block, dom.$unblock, 'fa-eye-slash', T('blockUser'), T('unblockUser'));
-    }
-
-    $btn.on('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      $('.pxp19-dropdown-menu').not($menu).removeClass('show');
-      $menu.toggleClass('show');
-    });
-
-    $menuWrap.append($btn, $menu);
-    $wrap.append($menuWrap);
-    $header.append($wrap);
-  }
-
-  function buildTabNav($shell) {
-    const slug = getViewedSlug();
-    const section = getCurrentSection();
-    const primaryTabs = [
-      { key: 'about', label: T('review'), href: '/user/' + slug },
-      { key: 'topics', label: T('notes'), href: '/user/' + slug + '/topics' }
-    ];
-
-    const $nav = $('<div id="pxp19-tab-nav" class="pxp19-injected"></div>');
-    const $scroll = $('<div class="pxp19-tab-scroll"></div>');
-
-    primaryTabs.forEach(function (tab) {
-      const active = isTabActive(section, tab.key) ? ' active' : '';
-      $scroll.append('<a href="' + tab.href + '" class="pxp19-tab' + active + '">' + esc(tab.label) + '</a>');
-    });
-
-    $nav.append($scroll);
-    $shell.append($nav);
-  }
-
-  function isTabActive(section, key) {
-    if (key === 'about' && section === 'about') return true;
-    return section === key;
-  }
-
-  function mirrorFollowState($slot, $follow, $unfollow) {
-    function render() {
-      $slot.empty();
-      const followHidden = !$follow.length || $follow.hasClass('hide') || $follow.hasClass('hidden');
-      const unfollowHidden = !$unfollow.length || $unfollow.hasClass('hide') || $unfollow.hasClass('hidden');
-
-      let $btn = null;
-      if (!followHidden && $follow.length) {
-        $btn = $('<button type="button" class="pxp19-btn pxp19-btn-primary pxp19-btn-long">' + esc(T('follow')) + '</button>');
-        $btn.on('click', function (e) {
-          e.preventDefault();
-          $follow.get(0).click();
-        });
-      } else if (!unfollowHidden && $unfollow.length) {
-        $btn = $('<button type="button" class="pxp19-btn pxp19-btn-outline-muted pxp19-btn-long">' + esc(T('following')) + '</button>');
-        $btn.on('click', function (e) {
-          e.preventDefault();
-          $unfollow.get(0).click();
-        });
-      } else if ($follow.length) {
-        $btn = $('<button type="button" class="pxp19-btn pxp19-btn-primary pxp19-btn-long">' + esc(T('follow')) + '</button>');
-        $btn.on('click', function (e) {
-          e.preventDefault();
-          $follow.get(0).click();
-        });
-      }
-
-      if ($btn) $slot.append($btn);
-    }
-
-    render();
-
-    const obs = new MutationObserver(render);
-    $follow.add($unfollow).each(function () {
-      obs.observe(this, { attributes: true, attributeFilter: ['class', 'style'] });
-    });
-    observers.push(obs);
-  }
-
-  function addMenuLink($menu, href, icon, text) {
-    $menu.append(
-      '<a href="' + href + '" class="pxp19-menu-item">' +
-        '<i class="fa fa-fw ' + icon + '"></i><span>' + esc(text) + '</span>' +
-      '</a>'
-    );
-  }
-
-  function addMenuCustomAction($menu, icon, text, fn) {
-    const $item = $(
-      '<button type="button" class="pxp19-menu-item">' +
-        '<i class="fa fa-fw ' + icon + '"></i><span>' + esc(text) + '</span>' +
-      '</button>'
-    );
-    $item.on('click', function (e) {
-      e.preventDefault();
-      $('.pxp19-dropdown-menu').removeClass('show');
-      fn();
-    });
-    $menu.append($item);
-  }
-
-  function addMenuDivider($menu) {
-    $menu.append('<div class="pxp19-menu-divider"></div>');
-  }
-
-  function addMenuAction($menu, $source, icon, text) {
-    if (!$source || !$source.length) return;
-
-    const $item = $(
-      '<button type="button" class="pxp19-menu-item">' +
-        '<i class="fa fa-fw ' + icon + '"></i><span>' + esc(text) + '</span>' +
-      '</button>'
-    );
-
-    $item.on('click', function (e) {
-      e.preventDefault();
-      $('.pxp19-dropdown-menu').removeClass('show');
-      $source.get(0).click();
-    });
-
-    $menu.append($item);
-  }
-
-  function addMenuMirrorButtons($menu, $a, $b, icon, textA, textB) {
-    if ((!$a || !$a.length) && (!$b || !$b.length)) return;
-
-    const $wrapper = $('<div class="pxp19-menu-mirror-slot"></div>');
-
-    function render() {
-      $wrapper.empty();
-      const aHidden = !$a.length || $a.hasClass('hide') || $a.hasClass('hidden');
-      const bHidden = !$b.length || $b.hasClass('hide') || $b.hasClass('hidden');
-
-      let $target = null;
-      let label = '';
-
-      if (!aHidden && $a.length) {
-        $target = $a;
-        label = textA;
-      } else if (!bHidden && $b.length) {
-        $target = $b;
-        label = textB;
-      } else if ($a.length) {
-        $target = $a;
-        label = textA;
-      }
-
-      if (!$target) return;
-
-      const $item = $(
-        '<button type="button" class="pxp19-menu-item">' +
-          '<i class="fa fa-fw ' + icon + '"></i><span>' + esc(label) + '</span>' +
-        '</button>'
-      );
-
-      $item.on('click', function (e) {
-        e.preventDefault();
-        $('.pxp19-dropdown-menu').removeClass('show');
-        $target.get(0).click();
-      });
-
-      $wrapper.append($item);
-    }
-
-    render();
-
-    const obs = new MutationObserver(render);
-    $a.add($b).each(function () {
-      obs.observe(this, { attributes: true, attributeFilter: ['class', 'style'] });
-    });
-    observers.push(obs);
-
-    $menu.append($wrapper);
-  }
-
-  function triggerAvatarUpload(dom) {
-    const $anchor = dom.$avatarChangeAnchor;
-    const $wrap = dom.$avatarChangeWrap;
-
-    if ($anchor && $anchor.length) {
-      $anchor.get(0).click();
-      return;
-    }
-    if ($wrap && $wrap.length) {
-      $wrap.get(0).click();
-    }
-  }
-
-  function tweakContentArea(dom) {
-    const section = getCurrentSection();
-    const editable = isEditableSection();
-
-    if (section === 'topics') {
-      renderNotesSection(dom);
-    }
-
-    if (!editable) {
-      dom.$accountContent.children('.d-flex.justify-content-between.align-items-center.mb-3').addClass('pxp19-hidden');
-    }
-
-    if (section === 'about') {
-      renderReviewSection(dom);
-      return;
-    }
-
-    dom.$stats.find('.card').addClass('pxp19-about-card');
-  }
-
-  function renderNotesSection(dom) {
-    if (getCurrentSection() !== 'topics') return;
-    const $content = dom.$accountContent;
-    if (!$content.length || $content.find('.pxp19-notes-grid').length) return;
-
-    const notes = collectNotesFromDom($content);
-    $content.children().not('.pxp19-injected').addClass('pxp19-notes-original-hidden');
-
-    const $grid = $('<div class="pxp19-notes-grid pxp19-injected" aria-live="polite"></div>');
-    $content.append($grid);
-
-    if (notes.length) {
-      renderNotes($grid, notes);
-      return;
-    }
-
-    $grid.html('<div class="pxp19-notes-empty">' + esc(T('notesLoading')) + '</div>');
-    fetchNotesFromApi().then(function (apiNotes) {
-      if (apiNotes && apiNotes.length) renderNotes($grid, apiNotes);
-      else $grid.html('<div class="pxp19-notes-empty">' + esc(T('notesEmpty')) + '</div>');
-    }).catch(function () {
-      $grid.html('<div class="pxp19-notes-empty">' + esc(T('notesEmpty')) + '</div>');
-    });
-  }
-
-  function collectNotesFromDom($content) {
-    const seen = {};
-    const notes = [];
-
-    $content.find('a[href*="/topic/"]').each(function () {
-      const $a = $(this);
-      const href = $a.attr('href') || '';
-      if (!href || seen[href]) return;
-      let title = norm($a.text());
-      if (!title || title.length < 2) return;
-
-      const $row = $a.closest('li, [component="category/topic"], [component="topic"], .topic-row, .category-item, .card, .row');
-      let excerpt = '';
-      if ($row.length) {
-        excerpt = norm($row.find('.teaser-content, .topic-teaser, .description, [component="post/content"], .content').first().text());
-        if (!excerpt) {
-          const rowText = norm($row.text());
-          excerpt = rowText.replace(title, '').replace(/\d+\s*(回复|浏览|views|posts)/ig, '').trim();
-        }
-      }
-
-      let image = '';
-      $row.find('img').each(function () {
-        const src = $(this).attr('src') || $(this).attr('data-src') || '';
-        const cls = String($(this).attr('class') || '');
-        if (!src || /avatar|user|emoji|icon/i.test(cls + ' ' + src)) return;
-        image = src;
-        return false;
-      });
-
-      seen[href] = true;
-      notes.push({ href: href, title: title, excerpt: excerpt, image: image });
-    });
-
-    return notes.slice(0, 60);
-  }
-
-  function fetchNotesFromApi() {
-    const slug = getViewedSlug();
-    if (!slug) return Promise.resolve([]);
-    return fetch(rel('/api/user/' + encodeURIComponent(slug) + '/topics'), {
-      credentials: 'same-origin',
-      cache: 'no-store'
-    }).then(function (res) {
-      if (!res.ok) throw new Error('topics ' + res.status);
-      return res.json();
-    }).then(function (json) {
-      const data = json && (json.topics || json.posts || json.response && (json.response.topics || json.response.posts) || []);
-      return normalizeApiNotes(Array.isArray(data) ? data : []);
-    });
-  }
-
-  function normalizeApiNotes(items) {
-    return items.map(function (item) {
-      item = item || {};
-      const tid = item.tid || item.topicId || item.slug || '';
-      const slug = item.slug || (tid ? String(tid) : '');
-      const href = item.href || item.url || (slug ? '/topic/' + slug : '');
-      const title = norm(item.title || item.topicTitle || item.name || '');
-      const excerpt = stripHtml(item.teaser && (item.teaser.content || item.teaser.text) || item.content || item.excerpt || item.description || '');
-      let image = item.image || item.cover || item.thumbnail || '';
-      if (!image && item.teaser && item.teaser.image) image = item.teaser.image;
-      if (!title || !href) return null;
-      return { href: href, title: title, excerpt: norm(excerpt), image: image };
-    }).filter(Boolean).slice(0, 60);
-  }
-
-  function renderNotes($grid, notes) {
-    $grid.empty();
-    notes.forEach(function (note) {
-      const imageHtml = note.image
-        ? '<div class="pxp19-note-cover" style="background-image:url(&quot;' + esc(note.image) + '&quot;)"></div>'
-        : '<div class="pxp19-note-cover pxp19-note-cover-empty"></div>';
-      const excerptHtml = note.excerpt
-        ? '<div class="pxp19-note-excerpt">' + esc(note.excerpt).slice(0, 90) + '</div>'
-        : '';
-      $grid.append(
-        '<a class="pxp19-note-card" href="' + esc(note.href) + '" aria-label="' + esc(T('noteOpen')) + '">' +
-          imageHtml +
-          '<div class="pxp19-note-body">' +
-            '<div class="pxp19-note-title">' + esc(note.title) + '</div>' +
-            excerptHtml +
-          '</div>' +
-        '</a>'
-      );
-    });
-  }
-
-
-  function getViewedUid() {
-    const u = getProfileData();
-    return String(
-      u.uid ||
-      $('[component="avatar/picture"][data-uid]').first().attr('data-uid') ||
-      $('[component="avatar/icon"][data-uid]').first().attr('data-uid') ||
-      $('.avatar[data-uid]').first().attr('data-uid') ||
-      ''
-    ).trim();
-  }
-
-  function currentUserUid() {
-    const me = window.app && window.app.user;
-    return String(me && me.uid || '').trim();
-  }
-
-  function loginRequired() {
-    const me = window.app && window.app.user;
-    return !(me && Number(me.uid || 0) > 0);
-  }
-
-  function notifySuccess(msg) {
-    if (window.app && typeof window.app.alertSuccess === 'function') app.alertSuccess(msg);
-    else window.alert(msg);
-  }
-
-  function notifyError(msg) {
-    if (window.app && typeof window.app.alertError === 'function') app.alertError(msg);
-    else window.alert(msg);
-  }
-
-  function formatReviewTime(value) {
-    const ts = Number(value || 0);
-    if (!ts) return '';
-    const d = new Date(ts);
-    if (isNaN(d.getTime())) return '';
-    const now = Date.now();
-    const diff = Math.max(0, now - ts);
-    const m = 60000;
-    const h = 60 * m;
-    const day = 24 * h;
-    if (diff < m) return '刚刚';
-    if (diff < h) return Math.max(1, Math.floor(diff / m)) + '分钟前';
-    if (diff < day) return Math.floor(diff / h) + '小时前';
-    if (diff < 30 * day) return Math.floor(diff / day) + '天前';
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  }
-
-  function starsHtml(value, interactive) {
-    const n = Math.max(0, Math.min(5, Math.round(Number(value || 0))));
-    let out = '';
-    for (let i = 1; i <= 5; i += 1) {
-      out += '<button type="button" class="pxp19-star' + (i <= n ? ' active' : '') + '" data-star="' + i + '"' + (interactive ? '' : ' tabindex="-1" aria-hidden="true"') + '>★</button>';
-    }
-    return out;
-  }
-
-  function reviewEndpoints(uid) {
-    uid = encodeURIComponent(uid || getViewedUid() || '');
-    return [
-      '/api/peipe-swipe/comments/' + uid + '?limit=40',
-      '/api/peipe-swipe/profile/' + uid + '/comments?limit=40',
-      '/api/v3/plugins/peipe-swipe/comments/' + uid + '?limit=40',
-      '/api/v3/plugins/peipe-swipe/profile/' + uid + '/comments?limit=40'
-    ];
-  }
-
-  function normalizeReviewList(data) {
-    data = data || {};
-    const items = data.reviews || data.comments || data.items || [];
-    const summary = data.summary || {};
-    return {
-      items: Array.isArray(items) ? items : [],
-      overall: Number(summary.overall || data.overall || data.avg || 0) || 0,
-      count: Number(summary.count || data.count || (Array.isArray(items) ? items.length : 0)) || 0,
-      canReview: data.canReview || { eligible: !loginRequired() }
-    };
-  }
-
-  function loadReviews() {
-    const uid = getViewedUid();
-    if (!uid) return Promise.resolve(normalizeReviewList({}));
-    return tryApiEndpoints(reviewEndpoints(uid)).then(normalizeReviewList).catch(function () {
-      return normalizeReviewList({});
-    });
-  }
-
-  function postReview(rating, content) {
-    const uid = getViewedUid();
-    const payload = {
-      content: content,
-      ratings: {
-        language: rating,
-        reply: rating,
-        friendly: rating,
-        patient: rating
-      },
-      anonymous: false
-    };
-    const body = JSON.stringify(payload);
-    const endpoints = reviewEndpoints(uid).map(function (url) { return url.replace(/\?.*$/, ''); });
-    return tryApiEndpoints(endpoints, function () {
-      return {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'x-csrf-token': csrfToken()
-        },
-        body: body
-      };
-    });
-  }
-
-  function renderReviewItems(items) {
-    if (!items || !items.length) {
-      return '<div class="pxp19-review-empty">' + esc(T('reviewEmpty')) + '</div>';
-    }
-
-    return items.map(function (item) {
-      item = item || {};
-      const name = item.authorName || item.username || (item.user && (item.user.username || item.user.displayname)) || '用户';
-      const avatar = item.authorAvatar || item.picture || (item.user && (item.user.picture || item.user.uploadedpicture)) || '';
-      const content = item.content || item.text || item.comment || '';
-      const overall = Number(item.overall || item.rating || item.score || 0) || 0;
-      const href = item.authorSlug ? '/user/' + encodeURIComponent(item.authorSlug) : '';
-      const avatarHtml = avatar
-        ? '<img src="' + esc(avatar) + '" alt="">'
-        : '<span>' + esc(String(name).slice(0, 1).toUpperCase()) + '</span>';
-      return '' +
-        '<div class="pxp19-review-item">' +
-          (href ? '<a class="pxp19-review-avatar" href="' + href + '">' + avatarHtml + '</a>' : '<div class="pxp19-review-avatar">' + avatarHtml + '</div>') +
-          '<div class="pxp19-review-body">' +
-            '<div class="pxp19-review-head">' +
-              '<strong>' + esc(name) + '</strong>' +
-              '<span class="pxp19-review-mini-stars">' + starsHtml(overall, false) + '</span>' +
-            '</div>' +
-            (content ? '<div class="pxp19-review-text">' + esc(content) + '</div>' : '') +
-            (item.createdAt ? '<div class="pxp19-review-time">' + esc(formatReviewTime(item.createdAt)) + '</div>' : '') +
-          '</div>' +
-        '</div>';
-    }).join('');
-  }
-
-  function renderReviewSection(dom) {
-    const $content = dom.$accountContent;
-    if (!$content.length) return;
-
-    $content.children().not('.pxp19-review-panel').addClass('pxp19-review-original-hidden');
-    dom.$stats.addClass('pxp19-review-original-hidden');
-
-    let $panel = $content.find('.pxp19-review-panel').first();
-    if (!$panel.length) {
-      $panel = $('' +
-        '<section class="pxp19-review-panel pxp19-injected">' +
-          '<div class="pxp19-review-summary">' +
-            '<div class="pxp19-review-score">0.0</div>' +
-            '<div class="pxp19-review-summary-right">' +
-              '<div class="pxp19-review-label">' + esc(T('reviewScore')) + '</div>' +
-              '<div class="pxp19-review-stars">' + starsHtml(0, false) + '</div>' +
-              '<div class="pxp19-review-count">0 ' + esc(T('reviewCount')) + '</div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="pxp19-review-form">' +
-            '<div class="pxp19-review-form-title">' + esc(T('ratingTitle')) + '</div>' +
-            '<div class="pxp19-review-input-stars" data-rating="5">' + starsHtml(5, true) + '</div>' +
-            '<textarea class="pxp19-review-textarea" maxlength="240" placeholder="' + esc(T('ratingPlaceholder')) + '"></textarea>' +
-            '<button type="button" class="pxp19-review-submit">' + esc(T('publishReview')) + '</button>' +
-          '</div>' +
-          '<div class="pxp19-review-list"><div class="pxp19-review-loading">' + esc(T('reviewLoading')) + '</div></div>' +
-        '</section>'
-      );
-      $content.append($panel);
-    }
-
-    loadReviews().then(function (data) {
-      const avg = Math.max(0, Math.min(5, Number(data.overall || 0)));
-      $panel.find('.pxp19-review-score').text(avg.toFixed(1));
-      $panel.find('.pxp19-review-stars').html(starsHtml(avg, false));
-      $panel.find('.pxp19-review-count').text(String(data.count || 0) + ' ' + T('reviewCount'));
-      $panel.find('.pxp19-review-list').html(renderReviewItems(data.items));
-      if (data.canReview && data.canReview.eligible === false) {
-        $panel.find('.pxp19-review-submit').prop('disabled', true).text(T('reviewNotEligible'));
-      }
-    }).catch(function () {
-      $panel.find('.pxp19-review-list').html('<div class="pxp19-review-empty">' + esc(T('reviewEmpty')) + '</div>');
-    });
-  }
-
-  function splitList(value) {
-    if (Array.isArray(value)) return value.filter(Boolean);
-    const s = String(value || '').trim();
-    if (!s || s === '[]') return [];
-    try {
-      const parsed = JSON.parse(s);
-      if (Array.isArray(parsed)) return parsed.filter(Boolean);
-    } catch (e) {}
-    return s.split(/[，,、\s|/]+/).map(norm).filter(Boolean);
-  }
-
-  function firstValue(obj, keys) {
-    obj = obj || {};
-    for (let i = 0; i < keys.length; i += 1) {
-      const v = obj[keys[i]];
-      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
-    }
-    return '';
-  }
-
-  function profileFallbackForEditor() {
-    const u = getProfileData();
-    return {
-      displayName: firstValue(u, ['fullname', 'displayname', 'username']) || getDisplayName(),
-      bio: firstValue(u, ['aboutme', 'signature', 'bio']) || getBioText(),
-      birthday: firstValue(u, ['birthday', 'birthdate', 'dob']),
-      gender: firstValue(u, ['gender']) || 'private',
-      country: firstValue(u, ['country', 'nationality', 'language_flag']) || getCountryText(),
-      nativeLanguages: splitList(firstValue(u, ['language_fluent', 'native_language', 'language_native'])),
-      learningLanguages: splitList(firstValue(u, ['language_learning', 'learning_language', 'language_target'])),
-      heightCm: firstValue(u, ['height_cm', 'heightCm', 'height']),
-      weightKg: firstValue(u, ['weight_kg', 'weightKg', 'weight']),
-      education: firstValue(u, ['education']),
-      job: firstValue(u, ['job', 'occupation']),
-      relationship: firstValue(u, ['relationship', 'relationship_status']),
-      tags: splitList(firstValue(u, ['tags', 'interest_tags', 'interests']))
-    };
-  }
-
-  function normalizePartnerProfile(data) {
-    data = Object.assign({}, profileFallbackForEditor(), data || {});
-    return data;
-  }
-
-  function loadPartnerProfile() {
-    return tryApiEndpoints([
-      '/api/peipe-swipe/swipe/me',
-      '/api/v3/plugins/peipe-swipe/swipe/me'
-    ]).then(normalizePartnerProfile).catch(function () {
-      return normalizePartnerProfile({});
-    });
-  }
-
-  function savePartnerProfile(payload) {
-    const body = JSON.stringify(payload);
-    return tryApiEndpoints([
-      '/api/peipe-swipe/swipe/me',
-      '/api/v3/plugins/peipe-swipe/swipe/me'
-    ], function () {
-      return {
-        method: 'PUT',
-        headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'x-csrf-token': csrfToken()
-        },
-        body: body
-      };
-    });
-  }
-
-  function optionHtml(value, label, current) {
-    return '<option value="' + esc(value) + '"' + (String(value) === String(current || '') ? ' selected' : '') + '>' + esc(label) + '</option>';
-  }
-
-  function openPartnerEditor() {
-    if (window.PEIPE_PARTNER_PROFILE && typeof window.PEIPE_PARTNER_PROFILE.openEditor === 'function') {
-      window.PEIPE_PARTNER_PROFILE.openEditor();
-      return;
-    }
-
-    if (!$('#pxp19-partner-editor').length) {
-      $('body').append('' +
-        '<div id="pxp19-partner-editor-mask"></div>' +
-        '<section id="pxp19-partner-editor" role="dialog" aria-modal="true">' +
-          '<div class="pxp19-editor-head">' +
-            '<div class="pxp19-editor-title">' + esc(T('partnerProfile')) + '</div>' +
-            '<button type="button" class="pxp19-editor-close" aria-label="' + esc(T('close')) + '">×</button>' +
-          '</div>' +
-          '<div class="pxp19-editor-body"><div class="pxp19-editor-loading">' + esc(T('reviewLoading')) + '</div></div>' +
-          '<div class="pxp19-editor-actions">' +
-            '<button type="button" class="pxp19-editor-cancel">' + esc(T('cancel')) + '</button>' +
-            '<button type="button" class="pxp19-editor-save">' + esc(T('save')) + '</button>' +
-          '</div>' +
-        '</section>'
-      );
-    }
-
-    $('#pxp19-partner-editor-mask, #pxp19-partner-editor').addClass('show');
-    $('#pxp19-partner-editor .pxp19-editor-body').html('<div class="pxp19-editor-loading">加载中...</div>');
-    loadPartnerProfile().then(renderPartnerEditorForm).catch(function () {
-      renderPartnerEditorForm(profileFallbackForEditor());
-      notifyError(T('loadFail'));
-    });
-  }
-
-  function renderPartnerEditorForm(p) {
-    p = normalizePartnerProfile(p);
-    const nativeText = splitList(firstValue(p, ['nativeLanguages', 'language_fluent', 'native_language', 'language_native'])).join(', ');
-    const learningText = splitList(firstValue(p, ['learningLanguages', 'language_learning', 'learning_language', 'language_target'])).join(', ');
-    const tagsText = splitList(firstValue(p, ['tags', 'interest_tags', 'interests'])).join(', ');
-    const gender = firstValue(p, ['gender']) || 'private';
-    const job = firstValue(p, ['job', 'occupation']);
-    const relationship = firstValue(p, ['relationship', 'relationship_status']);
-
-    const html = '' +
-      '<form class="pxp19-editor-form">' +
-        '<label class="pxp19-editor-field pxp19-editor-field-full"><span>' + esc(T('displayName')) + '</span><input name="displayName" value="' + esc(firstValue(p, ['displayName', 'displayname', 'fullname', 'username'])) + '"></label>' +
-        '<label class="pxp19-editor-field pxp19-editor-field-full"><span>' + esc(T('bio')) + '</span><textarea name="bio" rows="3">' + esc(firstValue(p, ['bio', 'aboutme', 'signature'])) + '</textarea></label>' +
-        '<label class="pxp19-editor-field"><span>' + esc(T('birthday')) + '</span><input name="birthday" type="date" value="' + esc(firstValue(p, ['birthday', 'birthdate', 'dob'])) + '"></label>' +
-        '<label class="pxp19-editor-field"><span>' + esc(T('gender')) + '</span><select name="gender">' +
-          optionHtml('private', T('genderPrivate'), gender) + optionHtml('male', T('genderMale'), gender) + optionHtml('female', T('genderFemale'), gender) +
-        '</select></label>' +
-        '<label class="pxp19-editor-field"><span>' + esc(T('country')) + '</span><input name="country" value="' + esc(firstValue(p, ['country', 'nationality', 'language_flag'])) + '" placeholder="CN"></label>' +
-        '<label class="pxp19-editor-field"><span>' + esc(T('nativeLanguages')) + '</span><input name="nativeLanguages" value="' + esc(nativeText) + '" placeholder="CN, EN"></label>' +
-        '<label class="pxp19-editor-field"><span>' + esc(T('learningLanguages')) + '</span><input name="learningLanguages" value="' + esc(learningText) + '" placeholder="JP, MY"></label>' +
-        '<label class="pxp19-editor-field"><span>' + esc(T('heightCm')) + '</span><input name="heightCm" inputmode="numeric" value="' + esc(firstValue(p, ['heightCm', 'height_cm', 'height'])) + '"></label>' +
-        '<label class="pxp19-editor-field"><span>' + esc(T('weightKg')) + '</span><input name="weightKg" inputmode="numeric" value="' + esc(firstValue(p, ['weightKg', 'weight_kg', 'weight'])) + '"></label>' +
-        '<label class="pxp19-editor-field"><span>' + esc(T('education')) + '</span><input name="education" value="' + esc(firstValue(p, ['education'])) + '" placeholder="' + esc(T('optional')) + '"></label>' +
-        '<label class="pxp19-editor-field"><span>' + esc(T('job')) + '</span><select name="job">' +
-          optionHtml('', T('optional'), job) + optionHtml('student', T('student'), job) + optionHtml('worker', T('worker'), job) + optionHtml('waiter', T('waiter'), job) + optionHtml('teacher', T('teacher'), job) + optionHtml('police', T('police'), job) + optionHtml('unemployed', T('unemployed'), job) +
-        '</select></label>' +
-        '<label class="pxp19-editor-field"><span>' + esc(T('relationship')) + '</span><select name="relationship">' +
-          optionHtml('', T('optional'), relationship) + optionHtml('single', T('single'), relationship) + optionHtml('dating', T('dating'), relationship) + optionHtml('married', T('married'), relationship) + optionHtml('divorced', T('divorced'), relationship) + optionHtml('private', T('privateValue'), relationship) +
-        '</select></label>' +
-        '<label class="pxp19-editor-field pxp19-editor-field-full"><span>' + esc(T('tags')) + '</span><input name="tags" value="' + esc(tagsText) + '" placeholder="认真, 有耐心, 语音练习"></label>' +
-      '</form>';
-    $('#pxp19-partner-editor .pxp19-editor-body').html(html);
-  }
-
-  function closePartnerEditor() {
-    $('#pxp19-partner-editor-mask, #pxp19-partner-editor').removeClass('show');
-  }
-
-  function readPartnerEditorPayload() {
-    const data = {};
-    $('#pxp19-partner-editor .pxp19-editor-form').serializeArray().forEach(function (item) {
-      data[item.name] = norm(item.value);
-    });
-    const nativeLanguages = splitList(data.nativeLanguages);
-    const learningLanguages = splitList(data.learningLanguages);
-    const tags = splitList(data.tags);
-
-    return {
-      displayName: data.displayName,
-      displayname: data.displayName,
-      fullname: data.displayName,
-      bio: data.bio,
-      aboutme: data.bio,
-      birthday: data.birthday,
-      gender: data.gender || 'private',
-      country: data.country,
-      nationality: data.country,
-      language_flag: data.country,
-      nativeLanguages: nativeLanguages,
-      language_fluent: nativeLanguages,
-      native_language: nativeLanguages,
-      learningLanguages: learningLanguages,
-      language_learning: learningLanguages,
-      learning_language: learningLanguages,
-      heightCm: data.heightCm,
-      height_cm: data.heightCm,
-      weightKg: data.weightKg,
-      weight_kg: data.weightKg,
-      education: data.education,
-      job: data.job,
-      occupation: data.job,
-      relationship: data.relationship,
-      relationship_status: data.relationship,
-      tags: tags,
-      interest_tags: tags
-    };
-  }
-
-  function bindGlobalEvents() {
-    $(document).off('.pxp19Profile');
-
-    $(document).on('click.pxp19Profile', function (e) {
-      if (!$(e.target).closest('.pxp19-menu-wrap').length) {
-        $('.pxp19-dropdown-menu').removeClass('show');
-      }
-    });
-
-    $(document).on('click.pxp19Profile', '.pxp19-edit-partner-profile', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      openPartnerEditor();
-    });
-
-    $(document).on('click.pxp19Profile', '.pxp19-review-input-stars .pxp19-star', function (e) {
-      e.preventDefault();
-      const $wrap = $(this).closest('.pxp19-review-input-stars');
-      const val = Number($(this).attr('data-star') || 5);
-      $wrap.attr('data-rating', val);
-      $wrap.find('.pxp19-star').each(function () {
-        $(this).toggleClass('active', Number($(this).attr('data-star')) <= val);
-      });
-    });
-
-    $(document).on('click.pxp19Profile', '.pxp19-review-submit', function (e) {
-      e.preventDefault();
-      if (loginRequired()) {
-        notifyError(T('loginFirst') || '请先登录');
-        return;
-      }
-      const $btn = $(this);
-      const $panel = $btn.closest('.pxp19-review-panel');
-      const rating = Number($panel.find('.pxp19-review-input-stars').attr('data-rating') || 5);
-      const content = norm($panel.find('.pxp19-review-textarea').val());
-      if (!content || content.length < 2) {
-        notifyError(T('ratingPlaceholder'));
-        return;
-      }
-      $btn.prop('disabled', true).text('发布中...');
-      postReview(rating, content).then(function () {
-        notifySuccess(T('reviewSent'));
-        $panel.remove();
-        const dom = getDomCache($('.account').first(), $('.account').first().find('.pxp19-original-top-hidden').first());
-        renderReviewSection(dom);
-      }).catch(function (err) {
-        const msg = (err && err.payload && (err.payload.reason || err.payload.error)) || (err && err.message) || T('reviewFail');
-        if (/24|eligible|not-eligible|chat/i.test(msg)) notifyError(T('reviewNotEligible'));
-        else notifyError(T('reviewFail') + ': ' + msg);
-      }).finally(function () {
-        $btn.prop('disabled', false).text(T('publishReview'));
-      });
-    });
-
-    $(document).on('click.pxp19Profile', '#pxp19-partner-editor-mask, .pxp19-editor-close, .pxp19-editor-cancel', function (e) {
-      e.preventDefault();
-      closePartnerEditor();
-    });
-
-    $(document).on('click.pxp19Profile', '.pxp19-editor-save', function (e) {
-      e.preventDefault();
-      const $btn = $(this);
-      const payload = readPartnerEditorPayload();
-      $btn.prop('disabled', true).text('保存中...');
-      savePartnerProfile(payload).then(function () {
-        notifySuccess(T('saveOk'));
-        closePartnerEditor();
-        if (window.ajaxify && typeof ajaxify.refresh === 'function') ajaxify.refresh();
-        else location.reload();
-      }).catch(function (err) {
-        notifyError((err && err.message) || T('saveFail'));
-      }).finally(function () {
-        $btn.prop('disabled', false).text(T('save'));
-      });
-    });
-  }
-
-  function norm(str) {
-    return String(str || '').replace(/\s+/g, ' ').trim();
-  }
-
-  function esc(str) {
-    return String(str || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function stripHtml(str) {
-    return String(str || '').replace(/<[^>]*>/g, '').trim();
-  }
-
-  function unique(arr) {
-    return Array.from(new Set(arr));
-  }
-
-  function containsMyanmar(str) {
-    return /[\u1000-\u109F\uA9E0-\uA9FF\uAA60-\uAA7F]/.test(String(str || ''));
-  }
-
-  function cssUrlEscape(url) {
-    return String(url || '').replace(/[\\"\n\r\f]/g, '\\$&');
-  }
-})();
+@media (max-width: 768px) {
+  body.pxp19-profile-active {
+    overflow-x: hidden !important;
+    background: #fff !important;
+  }
+
+  body.pxp19-profile-active [component="bottombar"] {
+    display: none !important;
+  }
+
+  body.pxp19-profile-active .sidebar-left,
+  body.pxp19-profile-active .sidebar-right {
+    display: none !important;
+  }
+
+  body.pxp19-profile-active main#panel {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+
+  body.pxp19-profile-active .layout-container {
+    padding-bottom: 0 !important;
+  }
+
+  body.pxp19-profile-active #content {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    max-width: 100% !important;
+  }
+
+  body.pxp19-profile-active .account {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .pxp19-original-top-hidden,
+  .pxp19-hidden {
+    display: none !important;
+  }
+
+  .pxp19-cover-raw {
+    position: absolute !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body.pxp19-profile-active .fixed-bottom .navigator-mobile {
+    display: none !important;
+  }
+
+  #pxp19-profile-shell {
+    position: relative;
+    z-index: 50;
+    background: #fff;
+  }
+
+  #pxp19-profile-header {
+    position: relative;
+    width: 100%;
+    min-height: 340px;
+    overflow: visible;
+    background: #fff;
+    z-index: 160;
+  }
+
+  .pxp19-cover {
+    width: 100%;
+    height: 340px;
+    background-size: cover;
+    background-position: center top;
+    background-repeat: no-repeat;
+    position: absolute;
+    inset: 0;
+  }
+
+  .pxp19-cover-shade {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0.12) 0%, rgba(0,0,0,0.26) 55%, rgba(0,0,0,0.58) 100%);
+    z-index: 1;
+  }
+
+  .pxp19-header-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 16px;
+    z-index: 2;
+    padding: 0 16px;
+    overflow: visible;
+  }
+
+  #pxp19-profile-header.pxp19-no-bio .pxp19-header-overlay {
+    bottom: 18px;
+  }
+
+  #pxp19-profile-topmenu {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 5000;
+    overflow: visible;
+  }
+
+  .pxp19-topmenu-wrap {
+    position: relative;
+  }
+
+  .pxp19-topmenu-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.26);
+    background: rgba(0,0,0,0.26);
+    color: #fff;
+    backdrop-filter: blur(10px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+  }
+
+  .pxp19-topmenu-btn i {
+    font-size: 16px;
+  }
+
+  .pxp19-user-main {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .pxp19-avatar-wrap {
+    position: relative;
+    flex: 0 0 92px;
+    width: 92px;
+    min-width: 92px;
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  .pxp19-avatar-circle {
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1.5px solid rgba(255,255,255,0.98);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+    background: #f5f5f5;
+  }
+
+  .pxp19-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .pxp19-avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 34px;
+    font-weight: 700;
+  }
+
+  .pxp19-avatar-upload-btn {
+    position: absolute;
+    right: -2px;
+    bottom: 4px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: #ff2442;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(255,36,66,0.25);
+    padding: 0;
+    z-index: 3;
+  }
+
+  .pxp19-avatar-flag {
+    position: absolute;
+    left: -1px;
+    bottom: 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    line-height: 1;
+    z-index: 4;
+    filter: drop-shadow(0 2px 5px rgba(0,0,0,0.24));
+    pointer-events: none;
+  }
+
+  .pxp19-user-right {
+    min-width: 0;
+    flex: 1;
+    padding-top: 2px;
+  }
+
+  .pxp19-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .pxp19-display-name {
+    font-size: 25px;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.18;
+    letter-spacing: -0.02em;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.46);
+    word-break: break-word;
+  }
+
+  .pxp19-mm-name {
+    line-height: 1.36;
+    padding-top: 1px;
+  }
+
+  .pxp19-gender-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.22);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.24);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.28);
+  }
+
+  .pxp19-language-line,
+  .pxp19-country-line {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #fff;
+    font-weight: 700;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.46);
+    line-height: 1.45;
+  }
+
+  .pxp19-lang-part {
+    display: inline-block;
+    vertical-align: middle;
+  }
+
+  .pxp19-lang-arrow {
+    display: inline-block;
+    vertical-align: middle;
+    margin: 0 4px;
+    font-size: 11px;
+    font-weight: 500;
+    opacity: 0.88;
+    transform: translateY(-0.5px);
+  }
+
+  .pxp19-country-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .pxp19-country-line i {
+    font-size: 12px;
+  }
+
+  .pxp19-mm-text {
+    line-height: 1.72;
+    padding-top: 1px;
+  }
+
+  .pxp19-bio {
+    margin-top: 12px;
+    max-width: 16em;
+    font-size: 13px;
+    line-height: 1.62;
+    color: #fff;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.6);
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .pxp19-mm-bio {
+    line-height: 1.92;
+    padding-top: 1px;
+  }
+
+  #pxp19-stats-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 28px;
+    padding: 14px 0 0 0;
+  }
+
+  .pxp19-stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-decoration: none !important;
+  }
+
+  .pxp19-stat-num {
+    font-size: 21px;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1;
+    text-shadow: 0 1px 5px rgba(0,0,0,0.35);
+  }
+
+  .pxp19-stat-label {
+    font-size: 12px;
+    color: rgba(255,255,255,0.92);
+    font-weight: 700;
+    margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  }
+
+  #pxp19-action-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 0 0 0;
+  }
+
+  .pxp19-btn-slot {
+    display: flex;
+    min-width: 0;
+  }
+
+  .pxp19-btn-long-slot {
+    flex: 1 1 auto;
+  }
+
+  .pxp19-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 800;
+    border: none;
+    cursor: pointer;
+    text-decoration: none !important;
+    white-space: nowrap;
+    transition: all 0.18s ease;
+    line-height: 1;
+  }
+
+  .pxp19-btn-long {
+    min-width: 112px;
+    flex: 1 1 auto;
+  }
+
+  .pxp19-btn-primary {
+    background: #ff2442;
+    color: #fff !important;
+    box-shadow: 0 4px 12px rgba(255,36,66,0.22);
+  }
+
+  .pxp19-btn-primary:active {
+    background: #e41d3a;
+    transform: translateY(1px);
+  }
+
+  .pxp19-btn-outline {
+    background: rgba(0,0,0,0.28);
+    color: #fff !important;
+    border: 1px solid rgba(255,255,255,0.24);
+    backdrop-filter: blur(8px);
+  }
+
+  .pxp19-btn-outline:active {
+    background: rgba(0,0,0,0.38);
+  }
+
+  .pxp19-btn-outline-muted {
+    background: rgba(0,0,0,0.38);
+    color: rgba(255,255,255,0.86) !important;
+    border: 1px solid rgba(255,255,255,0.12);
+    backdrop-filter: blur(8px);
+  }
+
+  .pxp19-menu-wrap {
+    position: relative;
+    flex: 0 0 auto;
+  }
+
+  .pxp19-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 188px;
+    padding: 6px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.98);
+    box-shadow: 0 16px 36px rgba(0,0,0,0.18);
+    display: none;
+    z-index: 99999;
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(0,0,0,0.04);
+  }
+
+  .pxp19-dropdown-menu.show {
+    display: block;
+  }
+
+  .pxp19-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #333 !important;
+    background: transparent;
+    border: none;
+    text-decoration: none !important;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .pxp19-menu-item:active,
+  .pxp19-menu-item.active {
+    background: #f5f5f5;
+  }
+
+  .pxp19-menu-item i {
+    color: #8f8f8f;
+    font-size: 14px;
+    width: 18px;
+    text-align: center;
+    text-shadow: none;
+  }
+
+  .pxp19-menu-divider {
+    height: 1px;
+    background: #f0f0f0;
+    margin: 6px 4px;
+  }
+
+  #pxp19-tab-nav {
+    position: relative;
+    z-index: 35;
+    background: #fff;
+    padding: 14px 0 10px 0;
+    margin: 0;
+  }
+
+  .pxp19-tab-scroll {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    gap: 14px;
+    padding: 0 16px;
+  }
+
+  .pxp19-tab {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    height: 36px;
+    padding: 0 16px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #7e7e7e !important;
+    text-decoration: none !important;
+    border: none;
+    border-radius: 999px;
+    background: #f7f7f7;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .pxp19-tab.active {
+    color: #ff2442 !important;
+    background: #fff1f4;
+  }
+
+  body.pxp19-profile-active .account-content {
+    padding: 16px 16px 88px 16px !important;
+    min-height: 30vh;
+    position: relative;
+    z-index: 1;
+    background: #fff;
+  }
+
+  body.pxp19-profile-active .account-content > * {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  body.pxp19-profile-active .account-stats.container {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .pxp19-about-card {
+    border: 1px solid #f0f0f0 !important;
+    border-radius: 14px !important;
+    box-shadow: none !important;
+    background: #fafafa !important;
+  }
+
+  body.pxp19-profile-active .alert {
+    border-radius: 12px;
+    font-size: 14px;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  body.pxp19-profile-active .topics-list .topic-row,
+  body.pxp19-profile-active .topics-list > li {
+    border-radius: 12px;
+    margin-bottom: 8px;
+  }
+
+  body.pxp19-profile-active [data-widget-area="header"] {
+    display: none !important;
+  }
+
+  body.pxp19-profile-active .pxp19-account-layout {
+    flex-direction: column !important;
+  }
+}
+
+@media (max-width: 768px) {
+  body.pxp19-profile-active.pxp19-profile-ready .account {
+    visibility: visible !important;
+  }
+
+  .pxp19-profile-uploading::after {
+    content: attr(data-pxp19-uploading-text);
+    position: fixed;
+    left: 50%;
+    bottom: 74px;
+    transform: translateX(-50%);
+    z-index: 100000;
+    max-width: calc(100vw - 48px);
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(20, 20, 28, 0.86);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 10px 28px rgba(0,0,0,.18);
+    pointer-events: none;
+  }
+}
+
+
+@media (max-width: 768px) {
+  .pxp19-notes-original-hidden {
+    display: none !important;
+  }
+
+  .pxp19-notes-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 2px 0 96px 0;
+  }
+
+  .pxp19-note-card {
+    display: block;
+    overflow: hidden;
+    border-radius: 18px;
+    background: #fff;
+    color: #2f3542 !important;
+    text-decoration: none !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .pxp19-note-cover {
+    height: 128px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: #fff1f4;
+  }
+
+  .pxp19-note-cover-empty {
+    background: linear-gradient(135deg, rgba(255,36,66,.14), rgba(126,87,194,.14));
+  }
+
+  .pxp19-note-body {
+    padding: 10px 10px 12px 10px;
+  }
+
+  .pxp19-note-title {
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.35;
+    color: #222;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .pxp19-note-excerpt {
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.45;
+    color: #70757d;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .pxp19-notes-empty {
+    grid-column: 1 / -1;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 18px;
+    background: #fafafa;
+    border: 1px solid #f0f0f0;
+    color: #8b8f98;
+    font-size: 14px;
+    font-weight: 700;
+  }
+}
+
+/* Peipe xprofile v20: review + partner profile editor. Only independent additions. */
+@media (max-width: 768px) {
+  body.pxp19-profile-booting [component="bottombar"],
+  body.pxp19-profile-booting .sidebar-left,
+  body.pxp19-profile-booting .sidebar-right,
+  body.pxp19-profile-booting .fixed-bottom .navigator-mobile,
+  body.pxp19-profile-active .fixed-bottom,
+  body.pxp19-profile-booting .fixed-bottom {
+    display: none !important;
+  }
+
+  body.pxp19-profile-booting main#panel {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+
+  .pxp19-review-original-hidden {
+    display: none !important;
+  }
+
+  .pxp19-review-panel {
+    padding: 0 0 92px 0;
+  }
+
+  .pxp19-review-summary,
+  .pxp19-review-form,
+  .pxp19-review-item,
+  .pxp19-review-empty {
+    border-radius: 18px;
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  }
+
+  .pxp19-review-summary {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .pxp19-review-score {
+    font-size: 42px;
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: -0.05em;
+    color: #111827;
+  }
+
+  .pxp19-review-summary-label,
+  .pxp19-review-count,
+  .pxp19-review-hint {
+    font-size: 12px;
+    font-weight: 800;
+    color: #8b8f98;
+  }
+
+  .pxp19-review-stars,
+  .pxp19-review-input-stars,
+  .pxp19-review-mini-stars {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .pxp19-star {
+    border: 0;
+    background: transparent;
+    color: #d1d5db;
+    padding: 0 1px;
+    font-size: 23px;
+    line-height: 1;
+  }
+
+  .pxp19-star.active {
+    color: #ffb000;
+  }
+
+  .pxp19-review-mini-stars .pxp19-star {
+    font-size: 12px;
+    pointer-events: none;
+  }
+
+  .pxp19-review-form {
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .pxp19-review-form-title {
+    font-size: 16px;
+    font-weight: 900;
+    margin-bottom: 10px;
+    color: #111827;
+  }
+
+  .pxp19-review-input-stars .pxp19-star {
+    font-size: 28px;
+  }
+
+  .pxp19-review-textarea {
+    width: 100%;
+    min-height: 82px;
+    margin-top: 10px;
+    border: 1px solid #edf0f5;
+    border-radius: 14px;
+    padding: 11px 12px;
+    background: #fafafa;
+    resize: vertical;
+    outline: none;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .pxp19-review-textarea:focus {
+    border-color: rgba(255, 36, 66, 0.36);
+    background: #fff;
+  }
+
+  .pxp19-review-anon {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 10px;
+    color: #4b5563;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .pxp19-review-submit {
+    width: 100%;
+    height: 42px;
+    border: 0;
+    border-radius: 999px;
+    margin-top: 12px;
+    background: #ff2442;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 900;
+  }
+
+  .pxp19-review-hint.show {
+    display: block;
+    margin-top: 8px;
+    color: #ff2442;
+  }
+
+  .pxp19-review-item {
+    display: flex;
+    gap: 10px;
+    padding: 13px;
+    margin-bottom: 10px;
+  }
+
+  .pxp19-review-avatar {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ff2442, #7c3aed);
+    color: #fff;
+    font-weight: 900;
+  }
+
+  .pxp19-review-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .pxp19-review-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .pxp19-review-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    font-size: 14px;
+  }
+
+  .pxp19-review-head strong {
+    min-width: 0;
+    max-width: 42%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pxp19-review-mine {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: #ff2442;
+    background: #fff1f4;
+    border-radius: 999px;
+    padding: 2px 6px;
+    font-weight: 900;
+  }
+
+  .pxp19-review-mini-stars {
+    margin-left: auto;
+  }
+
+  .pxp19-review-text {
+    margin-top: 5px;
+    color: #374151;
+    font-size: 14px;
+    line-height: 1.55;
+    word-break: break-word;
+  }
+
+  .pxp19-review-empty {
+    min-height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8b8f98;
+    font-weight: 800;
+  }
+
+  #pxp19-editor-mask,
+  #pxp19-choice-mask {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: none;
+    background: rgba(0, 0, 0, 0.36);
+    backdrop-filter: blur(8px);
+  }
+
+  #pxp19-editor-mask.show,
+  #pxp19-choice-mask.show {
+    display: block;
+  }
+
+  #pxp19-partner-editor,
+  #pxp19-choice-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100001;
+    display: none;
+    max-height: 90vh;
+    border-radius: 26px 26px 0 0;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.22);
+  }
+
+  #pxp19-partner-editor.show,
+  #pxp19-choice-sheet.show {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pxp19-editor-scroll {
+    overflow-y: auto;
+    padding: 18px 16px 96px 16px;
+  }
+
+  .pxp19-editor-title {
+    font-size: 21px;
+    font-weight: 950;
+    color: #111827;
+  }
+
+  .pxp19-editor-subtitle {
+    margin-top: 4px;
+    margin-bottom: 14px;
+    color: #8b8f98;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .pxp19-editor-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .pxp19-editor-wide {
+    grid-column: 1 / -1;
+  }
+
+  .pxp19-editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .pxp19-editor-field span,
+  .pxp19-editor-tags-title {
+    font-size: 13px;
+    font-weight: 900;
+    color: #4b5563;
+  }
+
+  .pxp19-editor-field em {
+    font-style: normal;
+    color: #9ca3af;
+  }
+
+  .pxp19-editor-field input,
+  .pxp19-editor-field textarea,
+  .pxp19-choice-button {
+    width: 100%;
+    border: 1px solid #edf0f5;
+    border-radius: 15px;
+    background: #fafafa;
+    padding: 12px;
+    color: #111827;
+    outline: none;
+    font-size: 14px;
+    font-weight: 800;
+  }
+
+  .pxp19-editor-field textarea {
+    resize: vertical;
+    line-height: 1.55;
+  }
+
+  .pxp19-choice-button {
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .pxp19-choice-button b {
+    color: #111827;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pxp19-editor-tags-selected {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    min-height: 30px;
+  }
+
+  .pxp19-editor-tag,
+  .pxp19-editor-note {
+    border-radius: 999px;
+    padding: 6px 9px;
+    background: #f3f4f6;
+    color: #4b5563;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .pxp19-tag-picker-btn {
+    width: 100%;
+    height: 40px;
+    border: 0;
+    border-radius: 999px;
+    background: #fff1f4;
+    color: #ff2442;
+    font-weight: 900;
+  }
+
+  .pxp19-editor-bottom {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) 16px;
+    background: rgba(255, 255, 255, 0.96);
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .pxp19-editor-leave,
+  .pxp19-editor-save {
+    flex: 1;
+    height: 44px;
+    border: 0;
+    border-radius: 999px;
+    font-weight: 950;
+    font-size: 15px;
+  }
+
+  .pxp19-editor-leave {
+    background: #f3f4f6;
+    color: #374151;
+  }
+
+  .pxp19-editor-save {
+    background: #ff2442;
+    color: #fff;
+  }
+
+  .pxp19-choice-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid #f1f2f4;
+  }
+
+  .pxp19-choice-head b {
+    font-size: 17px;
+    font-weight: 950;
+  }
+
+  .pxp19-choice-done {
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 14px;
+    background: #ff2442;
+    color: #fff;
+    font-weight: 900;
+  }
+
+  .pxp19-choice-list {
+    overflow-y: auto;
+    padding: 14px 16px calc(18px + env(safe-area-inset-bottom)) 16px;
+  }
+
+  .pxp19-choice-list > .pxp19-choice-option {
+    width: calc(50% - 5px);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    margin: 0 5px 10px 0;
+    border: 1px solid #edf0f5;
+    border-radius: 14px;
+    background: #fafafa;
+    color: #374151;
+    font-weight: 900;
+    text-align: left;
+  }
+
+  .pxp19-choice-option.active,
+  .pxp19-tag-option.active {
+    color: #ff2442;
+    border-color: rgba(255, 36, 66, 0.28);
+    background: #fff1f4;
+  }
+
+  .pxp19-tag-category-title {
+    margin: 12px 0 9px 0;
+    font-size: 13px;
+    font-weight: 950;
+    color: #4b5563;
+  }
+
+  .pxp19-tag-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .pxp19-tag-option {
+    border: 1px solid #edf0f5;
+    border-radius: 999px;
+    background: #fafafa;
+    color: #374151;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .pxp19-editor-loading {
+    padding: 50px 0;
+    text-align: center;
+    color: #8b8f98;
+    font-weight: 900;
+  }
+}
