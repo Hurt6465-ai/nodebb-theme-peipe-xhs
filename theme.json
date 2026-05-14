@@ -1,7 +1,7 @@
 {
     "id": "nodebb-theme-peipe-xhs",
     "name": "Peipe XHS",
-    "description": "The default theme for NodeBB. Uses a standard approach to forum design.",
+    "description": "Peipe 小红书风格移动端个人主页主题，基于 NodeBB Harmony",
     "url": "https://github.com/Hurt6465-ai/nodebb-theme-peipe-xhs",
     "screenshot": "screenshot.png"
 }
