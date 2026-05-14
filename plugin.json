@@ -12,8 +12,7 @@
   ],
   "scripts": [
     "public/harmony.js",
-    "public/peipe-xprofile-v19.js",
-    "public/peipe-xprofile-v19-fix.js"
+    "public/peipe-xprofile-v19.js"
   ],
   "scss": [
     "scss/peipe-xprofile-v19.scss"
