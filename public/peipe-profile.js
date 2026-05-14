@@ -25,7 +25,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
   const PROFILE_ASSETS = Object.assign({
     cssUrl: '/plugins/nodebb-theme-harmony/peipe-profile/peipe-profile.css',
-    i18nBaseUrl: '/plugins/nodebb-theme-harmony/peipe-profile/i18n/',
+    i18nBaseUrl: '/plugins/nodebb-theme-peipe-xhs/peipe-profile/i18n/',
     i18nDefault: 'zh-CN',
     imageConfig: {
       maxSide: 1080,
