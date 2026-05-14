@@ -671,52 +671,68 @@
   }
 }
 
-/* Peipe xprofile review + partner editor additions. Safe append only. */
+/* Peipe xprofile v20: review + partner profile editor. Only independent additions. */
 @media (max-width: 768px) {
+  body.pxp19-profile-booting [component="bottombar"],
+  body.pxp19-profile-booting .sidebar-left,
+  body.pxp19-profile-booting .sidebar-right,
+  body.pxp19-profile-booting .fixed-bottom .navigator-mobile,
+  body.pxp19-profile-active .fixed-bottom,
+  body.pxp19-profile-booting .fixed-bottom {
+    display: none !important;
+  }
+
+  body.pxp19-profile-booting main#panel {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+
   .pxp19-review-original-hidden {
     display: none !important;
   }
 
   .pxp19-review-panel {
-    padding: 0 14px 96px 14px;
+    padding: 0 0 92px 0;
   }
 
   .pxp19-review-summary,
   .pxp19-review-form,
-  .pxp19-review-item {
+  .pxp19-review-item,
+  .pxp19-review-empty {
+    border-radius: 18px;
     background: #fff;
     border: 1px solid rgba(15, 23, 42, 0.06);
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
   }
 
   .pxp19-review-summary {
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: 18px;
-    border-radius: 22px;
-    margin-bottom: 14px;
+    padding: 16px;
+    margin-bottom: 12px;
   }
 
   .pxp19-review-score {
-    font-size: 44px;
+    font-size: 42px;
     line-height: 1;
     font-weight: 900;
-    letter-spacing: -0.06em;
-    color: #171717;
+    letter-spacing: -0.05em;
+    color: #111827;
   }
 
-  .pxp19-review-label {
-    font-size: 13px;
-    font-weight: 900;
-    color: #4b5563;
-    margin-bottom: 5px;
+  .pxp19-review-summary-label,
+  .pxp19-review-count,
+  .pxp19-review-hint {
+    font-size: 12px;
+    font-weight: 800;
+    color: #8b8f98;
   }
 
   .pxp19-review-stars,
   .pxp19-review-input-stars,
   .pxp19-review-mini-stars {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 2px;
   }
@@ -725,18 +741,13 @@
     border: 0;
     background: transparent;
     color: #d1d5db;
-    font-size: 22px;
-    line-height: 1;
     padding: 0 1px;
+    font-size: 23px;
+    line-height: 1;
   }
 
   .pxp19-star.active {
     color: #ffb000;
-  }
-
-  .pxp19-review-input-stars .pxp19-star {
-    font-size: 30px;
-    padding-right: 3px;
   }
 
   .pxp19-review-mini-stars .pxp19-star {
@@ -744,69 +755,73 @@
     pointer-events: none;
   }
 
-  .pxp19-review-count {
-    margin-top: 5px;
-    color: #8b8f98;
-    font-size: 13px;
-    font-weight: 800;
-  }
-
   .pxp19-review-form {
-    padding: 17px;
-    border-radius: 22px;
-    margin-bottom: 14px;
+    padding: 16px;
+    margin-bottom: 12px;
   }
 
   .pxp19-review-form-title {
     font-size: 16px;
     font-weight: 900;
-    color: #171717;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
+    color: #111827;
+  }
+
+  .pxp19-review-input-stars .pxp19-star {
+    font-size: 28px;
   }
 
   .pxp19-review-textarea {
     width: 100%;
-    min-height: 92px;
-    border: 1px solid #edf0f5;
-    border-radius: 16px;
-    background: #fafafa;
-    padding: 12px 13px;
-    color: #111827;
-    font-size: 14px;
-    line-height: 1.6;
-    outline: none;
-    resize: vertical;
+    min-height: 82px;
     margin-top: 10px;
+    border: 1px solid #edf0f5;
+    border-radius: 14px;
+    padding: 11px 12px;
+    background: #fafafa;
+    resize: vertical;
+    outline: none;
+    font-size: 14px;
+    line-height: 1.55;
   }
 
   .pxp19-review-textarea:focus {
-    border-color: rgba(255, 36, 66, 0.34);
+    border-color: rgba(255, 36, 66, 0.36);
     background: #fff;
+  }
+
+  .pxp19-review-anon {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 10px;
+    color: #4b5563;
+    font-size: 13px;
+    font-weight: 800;
   }
 
   .pxp19-review-submit {
     width: 100%;
     height: 42px;
-    margin-top: 12px;
     border: 0;
     border-radius: 999px;
+    margin-top: 12px;
     background: #ff2442;
     color: #fff;
     font-size: 15px;
     font-weight: 900;
-    box-shadow: 0 8px 20px rgba(255, 36, 66, 0.18);
   }
 
-  .pxp19-review-submit:disabled {
-    background: #c9cbd3;
-    box-shadow: none;
+  .pxp19-review-hint.show {
+    display: block;
+    margin-top: 8px;
+    color: #ff2442;
   }
 
   .pxp19-review-item {
     display: flex;
     gap: 10px;
-    padding: 14px;
-    border-radius: 20px;
+    padding: 13px;
     margin-bottom: 10px;
   }
 
@@ -816,13 +831,12 @@
     flex: 0 0 38px;
     border-radius: 50%;
     overflow: hidden;
-    background: linear-gradient(135deg, #ff2442, #7c3aed);
-    color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: linear-gradient(135deg, #ff2442, #7c3aed);
+    color: #fff;
     font-weight: 900;
-    text-decoration: none;
   }
 
   .pxp19-review-avatar img {
@@ -831,7 +845,7 @@
     object-fit: cover;
   }
 
-  .pxp19-review-body {
+  .pxp19-review-main {
     flex: 1;
     min-width: 0;
   }
@@ -839,114 +853,103 @@
   .pxp19-review-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 7px;
+    min-width: 0;
     font-size: 14px;
-    color: #171717;
   }
 
   .pxp19-review-head strong {
+    min-width: 0;
+    max-width: 42%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  .pxp19-review-mine {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: #ff2442;
+    background: #fff1f4;
+    border-radius: 999px;
+    padding: 2px 6px;
+    font-weight: 900;
+  }
+
+  .pxp19-review-mini-stars {
+    margin-left: auto;
+  }
+
   .pxp19-review-text {
-    margin-top: 6px;
+    margin-top: 5px;
     color: #374151;
     font-size: 14px;
-    line-height: 1.6;
+    line-height: 1.55;
     word-break: break-word;
   }
 
-  .pxp19-review-time {
-    margin-top: 6px;
-    color: #9ca3af;
-    font-size: 12px;
-  }
-
-  .pxp19-review-empty,
-  .pxp19-review-loading {
-    min-height: 96px;
-    border-radius: 20px;
-    background: #fafafa;
-    border: 1px solid #f0f0f0;
-    color: #8b8f98;
+  .pxp19-review-empty {
+    min-height: 88px;
     display: flex;
     align-items: center;
     justify-content: center;
+    color: #8b8f98;
     font-weight: 800;
-    font-size: 14px;
   }
 
-  #pxp19-partner-editor-mask {
+  #pxp19-editor-mask,
+  #pxp19-choice-mask {
     position: fixed;
     inset: 0;
     z-index: 100000;
     display: none;
-    background: rgba(0, 0, 0, 0.38);
+    background: rgba(0, 0, 0, 0.36);
     backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
   }
 
-  #pxp19-partner-editor-mask.show {
+  #pxp19-editor-mask.show,
+  #pxp19-choice-mask.show {
     display: block;
   }
 
-  #pxp19-partner-editor {
+  #pxp19-partner-editor,
+  #pxp19-choice-sheet {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
     z-index: 100001;
     display: none;
-    max-height: 88vh;
+    max-height: 90vh;
+    border-radius: 26px 26px 0 0;
     overflow: hidden;
-    border-radius: 28px 28px 0 0;
-    background: linear-gradient(180deg, #fff, #f8f9fc);
-    box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.24);
+    background: #fff;
+    box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.22);
   }
 
-  #pxp19-partner-editor.show {
+  #pxp19-partner-editor.show,
+  #pxp19-choice-sheet.show {
     display: flex;
     flex-direction: column;
   }
 
-  .pxp19-editor-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 18px 18px 10px;
+  .pxp19-editor-scroll {
+    overflow-y: auto;
+    padding: 18px 16px 96px 16px;
   }
 
   .pxp19-editor-title {
-    font-size: 20px;
-    font-weight: 900;
+    font-size: 21px;
+    font-weight: 950;
     color: #111827;
   }
 
-  .pxp19-editor-close {
-    width: 34px;
-    height: 34px;
-    border: 0;
-    border-radius: 50%;
-    background: #f1f2f5;
-    color: #444;
-    font-size: 24px;
-    line-height: 1;
-  }
-
-  .pxp19-editor-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 18px 14px;
-  }
-
-  .pxp19-editor-loading {
-    padding: 42px 0;
+  .pxp19-editor-subtitle {
+    margin-top: 4px;
+    margin-bottom: 14px;
     color: #8b8f98;
-    text-align: center;
-    font-weight: 800;
+    font-size: 13px;
+    font-weight: 700;
   }
 
   .pxp19-editor-form {
@@ -955,67 +958,113 @@
     gap: 12px;
   }
 
-  .pxp19-editor-field {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-    min-width: 0;
-  }
-
-  .pxp19-editor-field-full {
+  .pxp19-editor-wide {
     grid-column: 1 / -1;
   }
 
-  .pxp19-editor-field span {
-    color: #4b5563;
+  .pxp19-editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .pxp19-editor-field span,
+  .pxp19-editor-tags-title {
     font-size: 13px;
     font-weight: 900;
+    color: #4b5563;
+  }
+
+  .pxp19-editor-field em {
+    font-style: normal;
+    color: #9ca3af;
   }
 
   .pxp19-editor-field input,
-  .pxp19-editor-field select,
-  .pxp19-editor-field textarea {
+  .pxp19-editor-field textarea,
+  .pxp19-choice-button {
     width: 100%;
     border: 1px solid #edf0f5;
-    border-radius: 16px;
-    background: #fff;
-    padding: 12px 13px;
+    border-radius: 15px;
+    background: #fafafa;
+    padding: 12px;
     color: #111827;
-    font-size: 14px;
-    font-weight: 700;
     outline: none;
+    font-size: 14px;
+    font-weight: 800;
   }
 
   .pxp19-editor-field textarea {
     resize: vertical;
-    line-height: 1.6;
+    line-height: 1.55;
   }
 
-  .pxp19-editor-field input:focus,
-  .pxp19-editor-field select:focus,
-  .pxp19-editor-field textarea:focus {
-    border-color: rgba(255, 36, 66, 0.36);
+  .pxp19-choice-button {
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
   }
 
-  .pxp19-editor-actions {
+  .pxp19-choice-button b {
+    color: #111827;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pxp19-editor-tags-selected {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    min-height: 30px;
+  }
+
+  .pxp19-editor-tag,
+  .pxp19-editor-note {
+    border-radius: 999px;
+    padding: 6px 9px;
+    background: #f3f4f6;
+    color: #4b5563;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .pxp19-tag-picker-btn {
+    width: 100%;
+    height: 40px;
+    border: 0;
+    border-radius: 999px;
+    background: #fff1f4;
+    color: #ff2442;
+    font-weight: 900;
+  }
+
+  .pxp19-editor-bottom {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: flex;
     gap: 10px;
-    padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
-    background: rgba(255, 255, 255, 0.94);
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) 16px;
+    background: rgba(255, 255, 255, 0.96);
     border-top: 1px solid rgba(15, 23, 42, 0.06);
   }
 
-  .pxp19-editor-cancel,
+  .pxp19-editor-leave,
   .pxp19-editor-save {
     flex: 1;
     height: 44px;
     border: 0;
     border-radius: 999px;
+    font-weight: 950;
     font-size: 15px;
-    font-weight: 900;
   }
 
-  .pxp19-editor-cancel {
+  .pxp19-editor-leave {
     background: #f3f4f6;
     color: #374151;
   }
@@ -1023,5 +1072,84 @@
   .pxp19-editor-save {
     background: #ff2442;
     color: #fff;
+  }
+
+  .pxp19-choice-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid #f1f2f4;
+  }
+
+  .pxp19-choice-head b {
+    font-size: 17px;
+    font-weight: 950;
+  }
+
+  .pxp19-choice-done {
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 14px;
+    background: #ff2442;
+    color: #fff;
+    font-weight: 900;
+  }
+
+  .pxp19-choice-list {
+    overflow-y: auto;
+    padding: 14px 16px calc(18px + env(safe-area-inset-bottom)) 16px;
+  }
+
+  .pxp19-choice-list > .pxp19-choice-option {
+    width: calc(50% - 5px);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    margin: 0 5px 10px 0;
+    border: 1px solid #edf0f5;
+    border-radius: 14px;
+    background: #fafafa;
+    color: #374151;
+    font-weight: 900;
+    text-align: left;
+  }
+
+  .pxp19-choice-option.active,
+  .pxp19-tag-option.active {
+    color: #ff2442;
+    border-color: rgba(255, 36, 66, 0.28);
+    background: #fff1f4;
+  }
+
+  .pxp19-tag-category-title {
+    margin: 12px 0 9px 0;
+    font-size: 13px;
+    font-weight: 950;
+    color: #4b5563;
+  }
+
+  .pxp19-tag-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .pxp19-tag-option {
+    border: 1px solid #edf0f5;
+    border-radius: 999px;
+    background: #fafafa;
+    color: #374151;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .pxp19-editor-loading {
+    padding: 50px 0;
+    text-align: center;
+    color: #8b8f98;
+    font-weight: 900;
   }
 }
