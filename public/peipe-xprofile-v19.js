@@ -79,7 +79,53 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     uploading: '上传中...',
     notesLoading: '正在加载笔记...',
     notesEmpty: '还没有笔记',
-    noteOpen: '打开笔记'
+    noteOpen: '打开笔记',
+    ratingTitle: '给 TA 评价',
+    ratingPlaceholder: '写一句真实印象，例如：很有耐心，适合练口语。',
+    publishReview: '发布评价',
+    reviewEmpty: '还没有评价',
+    reviewLoading: '正在加载评价...',
+    reviewScore: '综合评分',
+    reviewCount: '人评价',
+    reviewSent: '评价已发布',
+    reviewFail: '评价发布失败',
+    loginFirst: '请先登录',
+    reviewNotEligible: '聊天满 24 小时后才可以评价',
+    partnerProfile: '语伴资料',
+    save: '保存',
+    cancel: '取消',
+    close: '关闭',
+    displayName: '用户名',
+    bio: '介绍',
+    birthday: '出生日期',
+    gender: '性别',
+    genderMale: '男',
+    genderFemale: '女',
+    genderPrivate: '保密',
+    country: '国籍',
+    nativeLanguages: '母语',
+    learningLanguages: '想学语言',
+    heightCm: '身高 cm',
+    weightKg: '体重 kg',
+    education: '学历',
+    job: '职业',
+    relationship: '感情状况',
+    tags: '标签',
+    optional: '选填',
+    student: '在校生',
+    worker: '普通职工',
+    waiter: '服务员',
+    teacher: '老师',
+    police: '警察',
+    unemployed: '无业',
+    single: '单身',
+    dating: '恋爱中',
+    married: '已婚',
+    divorced: '离异',
+    privateValue: '保密',
+    saveOk: '资料已保存',
+    saveFail: '资料保存失败',
+    loadFail: '资料读取失败'
   };
 
   let profileText = Object.assign({}, DEFAULT_PROFILE_TEXT, window.PEIPE_XPROFILE_TEXT || window.PEIPE_XPROFILE_TEXT || window.PEIPE_PROFILE_TEXT || {});
@@ -96,6 +142,51 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   function ensureExternalCss() {
     // CSS is compiled by plugin.json -> scss/peipe-xprofile-v19.scss. Do not inject a second CSS link.
     return;
+  }
+
+  function rel(path) {
+    const base = (window.config && window.config.relative_path) || '';
+    if (!path) return base || '';
+    if (/^https?:\/\//i.test(path)) return path;
+    if (base && path.indexOf(base + '/') === 0) return path;
+    return base + path;
+  }
+
+  function csrfToken() {
+    return (window.config && (window.config.csrf_token || window.config.csrfToken)) ||
+      ($('meta[name="csrf-token"]').attr('content') || '');
+  }
+
+  function apiFetchJson(url, options) {
+    options = options || {};
+    options.credentials = options.credentials || 'same-origin';
+    options.headers = Object.assign({
+      accept: 'application/json',
+      'x-requested-with': 'XMLHttpRequest'
+    }, options.headers || {});
+
+    return fetch(rel(url), options).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (json) {
+        if (!res.ok || (json && json.ok === false)) {
+          const msg = (json && (json.error || json.message || (json.status && json.status.message))) || ('HTTP ' + res.status);
+          const err = new Error(msg);
+          err.status = res.status;
+          err.payload = json;
+          throw err;
+        }
+        return json && (json.response || json.data || json);
+      });
+    });
+  }
+
+  function tryApiEndpoints(endpoints, makeOptions) {
+    let chain = Promise.reject(new Error('start'));
+    endpoints.forEach(function (url) {
+      chain = chain.catch(function () {
+        return apiFetchJson(url, typeof makeOptions === 'function' ? makeOptions(url) : makeOptions);
+      });
+    });
+    return chain;
   }
 
   function getLocaleCandidates() {
@@ -557,6 +648,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     $('#pxp19-profile-shell, #pxp19-profile-header, #pxp19-profile-topmenu, #pxp19-tab-nav, .pxp19-injected, #xhs-profile-shell, #xhs-profile-header, #xhs-profile-topmenu, #xhs-tab-nav, .xhs-injected').remove();
 
     $('.pxp19-original-top-hidden, .xhs-original-top-hidden').removeClass('pxp19-original-top-hidden xhs-original-top-hidden');
+    $('.pxp19-review-original-hidden, .pxp19-notes-original-hidden').removeClass('pxp19-review-original-hidden pxp19-notes-original-hidden');
     $('.pxp19-hidden, .xhs-hidden').removeClass('pxp19-hidden xhs-hidden');
     $('.pxp19-cover-raw, .xhs-cover-raw').removeClass('pxp19-cover-raw xhs-cover-raw');
     $('.pxp19-about-card, .xhs-about-card').removeClass('pxp19-about-card xhs-about-card');
@@ -991,7 +1083,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
         const $viewBtn = $('<a href="/user/' + getViewedSlug() + '" class="pxp19-btn pxp19-btn-outline pxp19-btn-long">' + esc(T('backHome')) + '</a>');
         $bar.append($viewBtn);
       } else {
-        const $editBtn = $('<a href="/user/' + getViewedSlug() + '/edit" class="pxp19-btn pxp19-btn-primary pxp19-btn-long">' + esc(T('editProfile')) + '</a>');
+        const $editBtn = $('<button type="button" class="pxp19-btn pxp19-btn-primary pxp19-btn-long pxp19-edit-partner-profile">' + esc(T('editProfile')) + '</button>');
         $bar.append($editBtn);
       }
     } else {
@@ -1242,17 +1334,8 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     }
 
     if (section === 'about') {
-      const bio = getBioText().trim();
-      if (bio) {
-        dom.$accountContent.children().each(function () {
-          const $el = $(this);
-          if ($el.hasClass('account-stats')) return false;
-          const txt = norm($el.text());
-          if (txt === bio || txt.indexOf('关于我') !== -1) {
-            $el.addClass('pxp19-hidden');
-          }
-        });
-      }
+      renderReviewSection(dom);
+      return;
     }
 
     dom.$stats.find('.card').addClass('pxp19-about-card');
@@ -1371,12 +1454,452 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     });
   }
 
+
+  function getViewedUid() {
+    const u = getProfileData();
+    return String(
+      u.uid ||
+      $('[component="avatar/picture"][data-uid]').first().attr('data-uid') ||
+      $('[component="avatar/icon"][data-uid]').first().attr('data-uid') ||
+      $('.avatar[data-uid]').first().attr('data-uid') ||
+      ''
+    ).trim();
+  }
+
+  function currentUserUid() {
+    const me = window.app && window.app.user;
+    return String(me && me.uid || '').trim();
+  }
+
+  function loginRequired() {
+    const me = window.app && window.app.user;
+    return !(me && Number(me.uid || 0) > 0);
+  }
+
+  function notifySuccess(msg) {
+    if (window.app && typeof window.app.alertSuccess === 'function') app.alertSuccess(msg);
+    else window.alert(msg);
+  }
+
+  function notifyError(msg) {
+    if (window.app && typeof window.app.alertError === 'function') app.alertError(msg);
+    else window.alert(msg);
+  }
+
+  function formatReviewTime(value) {
+    const ts = Number(value || 0);
+    if (!ts) return '';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    const now = Date.now();
+    const diff = Math.max(0, now - ts);
+    const m = 60000;
+    const h = 60 * m;
+    const day = 24 * h;
+    if (diff < m) return '刚刚';
+    if (diff < h) return Math.max(1, Math.floor(diff / m)) + '分钟前';
+    if (diff < day) return Math.floor(diff / h) + '小时前';
+    if (diff < 30 * day) return Math.floor(diff / day) + '天前';
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function starsHtml(value, interactive) {
+    const n = Math.max(0, Math.min(5, Math.round(Number(value || 0))));
+    let out = '';
+    for (let i = 1; i <= 5; i += 1) {
+      out += '<button type="button" class="pxp19-star' + (i <= n ? ' active' : '') + '" data-star="' + i + '"' + (interactive ? '' : ' tabindex="-1" aria-hidden="true"') + '>★</button>';
+    }
+    return out;
+  }
+
+  function reviewEndpoints(uid) {
+    uid = encodeURIComponent(uid || getViewedUid() || '');
+    return [
+      '/api/peipe-swipe/comments/' + uid + '?limit=40',
+      '/api/peipe-swipe/profile/' + uid + '/comments?limit=40',
+      '/api/v3/plugins/peipe-swipe/comments/' + uid + '?limit=40',
+      '/api/v3/plugins/peipe-swipe/profile/' + uid + '/comments?limit=40'
+    ];
+  }
+
+  function normalizeReviewList(data) {
+    data = data || {};
+    const items = data.reviews || data.comments || data.items || [];
+    const summary = data.summary || {};
+    return {
+      items: Array.isArray(items) ? items : [],
+      overall: Number(summary.overall || data.overall || data.avg || 0) || 0,
+      count: Number(summary.count || data.count || (Array.isArray(items) ? items.length : 0)) || 0,
+      canReview: data.canReview || { eligible: !loginRequired() }
+    };
+  }
+
+  function loadReviews() {
+    const uid = getViewedUid();
+    if (!uid) return Promise.resolve(normalizeReviewList({}));
+    return tryApiEndpoints(reviewEndpoints(uid)).then(normalizeReviewList).catch(function () {
+      return normalizeReviewList({});
+    });
+  }
+
+  function postReview(rating, content) {
+    const uid = getViewedUid();
+    const payload = {
+      content: content,
+      ratings: {
+        language: rating,
+        reply: rating,
+        friendly: rating,
+        patient: rating
+      },
+      anonymous: false
+    };
+    const body = JSON.stringify(payload);
+    const endpoints = reviewEndpoints(uid).map(function (url) { return url.replace(/\?.*$/, ''); });
+    return tryApiEndpoints(endpoints, function () {
+      return {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'x-csrf-token': csrfToken()
+        },
+        body: body
+      };
+    });
+  }
+
+  function renderReviewItems(items) {
+    if (!items || !items.length) {
+      return '<div class="pxp19-review-empty">' + esc(T('reviewEmpty')) + '</div>';
+    }
+
+    return items.map(function (item) {
+      item = item || {};
+      const name = item.authorName || item.username || (item.user && (item.user.username || item.user.displayname)) || '用户';
+      const avatar = item.authorAvatar || item.picture || (item.user && (item.user.picture || item.user.uploadedpicture)) || '';
+      const content = item.content || item.text || item.comment || '';
+      const overall = Number(item.overall || item.rating || item.score || 0) || 0;
+      const href = item.authorSlug ? '/user/' + encodeURIComponent(item.authorSlug) : '';
+      const avatarHtml = avatar
+        ? '<img src="' + esc(avatar) + '" alt="">'
+        : '<span>' + esc(String(name).slice(0, 1).toUpperCase()) + '</span>';
+      return '' +
+        '<div class="pxp19-review-item">' +
+          (href ? '<a class="pxp19-review-avatar" href="' + href + '">' + avatarHtml + '</a>' : '<div class="pxp19-review-avatar">' + avatarHtml + '</div>') +
+          '<div class="pxp19-review-body">' +
+            '<div class="pxp19-review-head">' +
+              '<strong>' + esc(name) + '</strong>' +
+              '<span class="pxp19-review-mini-stars">' + starsHtml(overall, false) + '</span>' +
+            '</div>' +
+            (content ? '<div class="pxp19-review-text">' + esc(content) + '</div>' : '') +
+            (item.createdAt ? '<div class="pxp19-review-time">' + esc(formatReviewTime(item.createdAt)) + '</div>' : '') +
+          '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function renderReviewSection(dom) {
+    const $content = dom.$accountContent;
+    if (!$content.length) return;
+
+    $content.children().not('.pxp19-review-panel').addClass('pxp19-review-original-hidden');
+    dom.$stats.addClass('pxp19-review-original-hidden');
+
+    let $panel = $content.find('.pxp19-review-panel').first();
+    if (!$panel.length) {
+      $panel = $('' +
+        '<section class="pxp19-review-panel pxp19-injected">' +
+          '<div class="pxp19-review-summary">' +
+            '<div class="pxp19-review-score">0.0</div>' +
+            '<div class="pxp19-review-summary-right">' +
+              '<div class="pxp19-review-label">' + esc(T('reviewScore')) + '</div>' +
+              '<div class="pxp19-review-stars">' + starsHtml(0, false) + '</div>' +
+              '<div class="pxp19-review-count">0 ' + esc(T('reviewCount')) + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="pxp19-review-form">' +
+            '<div class="pxp19-review-form-title">' + esc(T('ratingTitle')) + '</div>' +
+            '<div class="pxp19-review-input-stars" data-rating="5">' + starsHtml(5, true) + '</div>' +
+            '<textarea class="pxp19-review-textarea" maxlength="240" placeholder="' + esc(T('ratingPlaceholder')) + '"></textarea>' +
+            '<button type="button" class="pxp19-review-submit">' + esc(T('publishReview')) + '</button>' +
+          '</div>' +
+          '<div class="pxp19-review-list"><div class="pxp19-review-loading">' + esc(T('reviewLoading')) + '</div></div>' +
+        '</section>'
+      );
+      $content.append($panel);
+    }
+
+    loadReviews().then(function (data) {
+      const avg = Math.max(0, Math.min(5, Number(data.overall || 0)));
+      $panel.find('.pxp19-review-score').text(avg.toFixed(1));
+      $panel.find('.pxp19-review-stars').html(starsHtml(avg, false));
+      $panel.find('.pxp19-review-count').text(String(data.count || 0) + ' ' + T('reviewCount'));
+      $panel.find('.pxp19-review-list').html(renderReviewItems(data.items));
+      if (data.canReview && data.canReview.eligible === false) {
+        $panel.find('.pxp19-review-submit').prop('disabled', true).text(T('reviewNotEligible'));
+      }
+    }).catch(function () {
+      $panel.find('.pxp19-review-list').html('<div class="pxp19-review-empty">' + esc(T('reviewEmpty')) + '</div>');
+    });
+  }
+
+  function splitList(value) {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    const s = String(value || '').trim();
+    if (!s || s === '[]') return [];
+    try {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch (e) {}
+    return s.split(/[，,、\s|/]+/).map(norm).filter(Boolean);
+  }
+
+  function firstValue(obj, keys) {
+    obj = obj || {};
+    for (let i = 0; i < keys.length; i += 1) {
+      const v = obj[keys[i]];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    return '';
+  }
+
+  function profileFallbackForEditor() {
+    const u = getProfileData();
+    return {
+      displayName: firstValue(u, ['fullname', 'displayname', 'username']) || getDisplayName(),
+      bio: firstValue(u, ['aboutme', 'signature', 'bio']) || getBioText(),
+      birthday: firstValue(u, ['birthday', 'birthdate', 'dob']),
+      gender: firstValue(u, ['gender']) || 'private',
+      country: firstValue(u, ['country', 'nationality', 'language_flag']) || getCountryText(),
+      nativeLanguages: splitList(firstValue(u, ['language_fluent', 'native_language', 'language_native'])),
+      learningLanguages: splitList(firstValue(u, ['language_learning', 'learning_language', 'language_target'])),
+      heightCm: firstValue(u, ['height_cm', 'heightCm', 'height']),
+      weightKg: firstValue(u, ['weight_kg', 'weightKg', 'weight']),
+      education: firstValue(u, ['education']),
+      job: firstValue(u, ['job', 'occupation']),
+      relationship: firstValue(u, ['relationship', 'relationship_status']),
+      tags: splitList(firstValue(u, ['tags', 'interest_tags', 'interests']))
+    };
+  }
+
+  function normalizePartnerProfile(data) {
+    data = Object.assign({}, profileFallbackForEditor(), data || {});
+    return data;
+  }
+
+  function loadPartnerProfile() {
+    return tryApiEndpoints([
+      '/api/peipe-swipe/swipe/me',
+      '/api/v3/plugins/peipe-swipe/swipe/me'
+    ]).then(normalizePartnerProfile).catch(function () {
+      return normalizePartnerProfile({});
+    });
+  }
+
+  function savePartnerProfile(payload) {
+    const body = JSON.stringify(payload);
+    return tryApiEndpoints([
+      '/api/peipe-swipe/swipe/me',
+      '/api/v3/plugins/peipe-swipe/swipe/me'
+    ], function () {
+      return {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'x-csrf-token': csrfToken()
+        },
+        body: body
+      };
+    });
+  }
+
+  function optionHtml(value, label, current) {
+    return '<option value="' + esc(value) + '"' + (String(value) === String(current || '') ? ' selected' : '') + '>' + esc(label) + '</option>';
+  }
+
+  function openPartnerEditor() {
+    if (window.PEIPE_PARTNER_PROFILE && typeof window.PEIPE_PARTNER_PROFILE.openEditor === 'function') {
+      window.PEIPE_PARTNER_PROFILE.openEditor();
+      return;
+    }
+
+    if (!$('#pxp19-partner-editor').length) {
+      $('body').append('' +
+        '<div id="pxp19-partner-editor-mask"></div>' +
+        '<section id="pxp19-partner-editor" role="dialog" aria-modal="true">' +
+          '<div class="pxp19-editor-head">' +
+            '<div class="pxp19-editor-title">' + esc(T('partnerProfile')) + '</div>' +
+            '<button type="button" class="pxp19-editor-close" aria-label="' + esc(T('close')) + '">×</button>' +
+          '</div>' +
+          '<div class="pxp19-editor-body"><div class="pxp19-editor-loading">' + esc(T('reviewLoading')) + '</div></div>' +
+          '<div class="pxp19-editor-actions">' +
+            '<button type="button" class="pxp19-editor-cancel">' + esc(T('cancel')) + '</button>' +
+            '<button type="button" class="pxp19-editor-save">' + esc(T('save')) + '</button>' +
+          '</div>' +
+        '</section>'
+      );
+    }
+
+    $('#pxp19-partner-editor-mask, #pxp19-partner-editor').addClass('show');
+    $('#pxp19-partner-editor .pxp19-editor-body').html('<div class="pxp19-editor-loading">加载中...</div>');
+    loadPartnerProfile().then(renderPartnerEditorForm).catch(function () {
+      renderPartnerEditorForm(profileFallbackForEditor());
+      notifyError(T('loadFail'));
+    });
+  }
+
+  function renderPartnerEditorForm(p) {
+    p = normalizePartnerProfile(p);
+    const nativeText = splitList(firstValue(p, ['nativeLanguages', 'language_fluent', 'native_language', 'language_native'])).join(', ');
+    const learningText = splitList(firstValue(p, ['learningLanguages', 'language_learning', 'learning_language', 'language_target'])).join(', ');
+    const tagsText = splitList(firstValue(p, ['tags', 'interest_tags', 'interests'])).join(', ');
+    const gender = firstValue(p, ['gender']) || 'private';
+    const job = firstValue(p, ['job', 'occupation']);
+    const relationship = firstValue(p, ['relationship', 'relationship_status']);
+
+    const html = '' +
+      '<form class="pxp19-editor-form">' +
+        '<label class="pxp19-editor-field pxp19-editor-field-full"><span>' + esc(T('displayName')) + '</span><input name="displayName" value="' + esc(firstValue(p, ['displayName', 'displayname', 'fullname', 'username'])) + '"></label>' +
+        '<label class="pxp19-editor-field pxp19-editor-field-full"><span>' + esc(T('bio')) + '</span><textarea name="bio" rows="3">' + esc(firstValue(p, ['bio', 'aboutme', 'signature'])) + '</textarea></label>' +
+        '<label class="pxp19-editor-field"><span>' + esc(T('birthday')) + '</span><input name="birthday" type="date" value="' + esc(firstValue(p, ['birthday', 'birthdate', 'dob'])) + '"></label>' +
+        '<label class="pxp19-editor-field"><span>' + esc(T('gender')) + '</span><select name="gender">' +
+          optionHtml('private', T('genderPrivate'), gender) + optionHtml('male', T('genderMale'), gender) + optionHtml('female', T('genderFemale'), gender) +
+        '</select></label>' +
+        '<label class="pxp19-editor-field"><span>' + esc(T('country')) + '</span><input name="country" value="' + esc(firstValue(p, ['country', 'nationality', 'language_flag'])) + '" placeholder="CN"></label>' +
+        '<label class="pxp19-editor-field"><span>' + esc(T('nativeLanguages')) + '</span><input name="nativeLanguages" value="' + esc(nativeText) + '" placeholder="CN, EN"></label>' +
+        '<label class="pxp19-editor-field"><span>' + esc(T('learningLanguages')) + '</span><input name="learningLanguages" value="' + esc(learningText) + '" placeholder="JP, MY"></label>' +
+        '<label class="pxp19-editor-field"><span>' + esc(T('heightCm')) + '</span><input name="heightCm" inputmode="numeric" value="' + esc(firstValue(p, ['heightCm', 'height_cm', 'height'])) + '"></label>' +
+        '<label class="pxp19-editor-field"><span>' + esc(T('weightKg')) + '</span><input name="weightKg" inputmode="numeric" value="' + esc(firstValue(p, ['weightKg', 'weight_kg', 'weight'])) + '"></label>' +
+        '<label class="pxp19-editor-field"><span>' + esc(T('education')) + '</span><input name="education" value="' + esc(firstValue(p, ['education'])) + '" placeholder="' + esc(T('optional')) + '"></label>' +
+        '<label class="pxp19-editor-field"><span>' + esc(T('job')) + '</span><select name="job">' +
+          optionHtml('', T('optional'), job) + optionHtml('student', T('student'), job) + optionHtml('worker', T('worker'), job) + optionHtml('waiter', T('waiter'), job) + optionHtml('teacher', T('teacher'), job) + optionHtml('police', T('police'), job) + optionHtml('unemployed', T('unemployed'), job) +
+        '</select></label>' +
+        '<label class="pxp19-editor-field"><span>' + esc(T('relationship')) + '</span><select name="relationship">' +
+          optionHtml('', T('optional'), relationship) + optionHtml('single', T('single'), relationship) + optionHtml('dating', T('dating'), relationship) + optionHtml('married', T('married'), relationship) + optionHtml('divorced', T('divorced'), relationship) + optionHtml('private', T('privateValue'), relationship) +
+        '</select></label>' +
+        '<label class="pxp19-editor-field pxp19-editor-field-full"><span>' + esc(T('tags')) + '</span><input name="tags" value="' + esc(tagsText) + '" placeholder="认真, 有耐心, 语音练习"></label>' +
+      '</form>';
+    $('#pxp19-partner-editor .pxp19-editor-body').html(html);
+  }
+
+  function closePartnerEditor() {
+    $('#pxp19-partner-editor-mask, #pxp19-partner-editor').removeClass('show');
+  }
+
+  function readPartnerEditorPayload() {
+    const data = {};
+    $('#pxp19-partner-editor .pxp19-editor-form').serializeArray().forEach(function (item) {
+      data[item.name] = norm(item.value);
+    });
+    const nativeLanguages = splitList(data.nativeLanguages);
+    const learningLanguages = splitList(data.learningLanguages);
+    const tags = splitList(data.tags);
+
+    return {
+      displayName: data.displayName,
+      displayname: data.displayName,
+      fullname: data.displayName,
+      bio: data.bio,
+      aboutme: data.bio,
+      birthday: data.birthday,
+      gender: data.gender || 'private',
+      country: data.country,
+      nationality: data.country,
+      language_flag: data.country,
+      nativeLanguages: nativeLanguages,
+      language_fluent: nativeLanguages,
+      native_language: nativeLanguages,
+      learningLanguages: learningLanguages,
+      language_learning: learningLanguages,
+      learning_language: learningLanguages,
+      heightCm: data.heightCm,
+      height_cm: data.heightCm,
+      weightKg: data.weightKg,
+      weight_kg: data.weightKg,
+      education: data.education,
+      job: data.job,
+      occupation: data.job,
+      relationship: data.relationship,
+      relationship_status: data.relationship,
+      tags: tags,
+      interest_tags: tags
+    };
+  }
+
   function bindGlobalEvents() {
     $(document).off('.pxp19Profile');
+
     $(document).on('click.pxp19Profile', function (e) {
       if (!$(e.target).closest('.pxp19-menu-wrap').length) {
         $('.pxp19-dropdown-menu').removeClass('show');
       }
+    });
+
+    $(document).on('click.pxp19Profile', '.pxp19-edit-partner-profile', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      openPartnerEditor();
+    });
+
+    $(document).on('click.pxp19Profile', '.pxp19-review-input-stars .pxp19-star', function (e) {
+      e.preventDefault();
+      const $wrap = $(this).closest('.pxp19-review-input-stars');
+      const val = Number($(this).attr('data-star') || 5);
+      $wrap.attr('data-rating', val);
+      $wrap.find('.pxp19-star').each(function () {
+        $(this).toggleClass('active', Number($(this).attr('data-star')) <= val);
+      });
+    });
+
+    $(document).on('click.pxp19Profile', '.pxp19-review-submit', function (e) {
+      e.preventDefault();
+      if (loginRequired()) {
+        notifyError(T('loginFirst') || '请先登录');
+        return;
+      }
+      const $btn = $(this);
+      const $panel = $btn.closest('.pxp19-review-panel');
+      const rating = Number($panel.find('.pxp19-review-input-stars').attr('data-rating') || 5);
+      const content = norm($panel.find('.pxp19-review-textarea').val());
+      if (!content || content.length < 2) {
+        notifyError(T('ratingPlaceholder'));
+        return;
+      }
+      $btn.prop('disabled', true).text('发布中...');
+      postReview(rating, content).then(function () {
+        notifySuccess(T('reviewSent'));
+        $panel.remove();
+        const dom = getDomCache($('.account').first(), $('.account').first().find('.pxp19-original-top-hidden').first());
+        renderReviewSection(dom);
+      }).catch(function (err) {
+        const msg = (err && err.payload && (err.payload.reason || err.payload.error)) || (err && err.message) || T('reviewFail');
+        if (/24|eligible|not-eligible|chat/i.test(msg)) notifyError(T('reviewNotEligible'));
+        else notifyError(T('reviewFail') + ': ' + msg);
+      }).finally(function () {
+        $btn.prop('disabled', false).text(T('publishReview'));
+      });
+    });
+
+    $(document).on('click.pxp19Profile', '#pxp19-partner-editor-mask, .pxp19-editor-close, .pxp19-editor-cancel', function (e) {
+      e.preventDefault();
+      closePartnerEditor();
+    });
+
+    $(document).on('click.pxp19Profile', '.pxp19-editor-save', function (e) {
+      e.preventDefault();
+      const $btn = $(this);
+      const payload = readPartnerEditorPayload();
+      $btn.prop('disabled', true).text('保存中...');
+      savePartnerProfile(payload).then(function () {
+        notifySuccess(T('saveOk'));
+        closePartnerEditor();
+        if (window.ajaxify && typeof ajaxify.refresh === 'function') ajaxify.refresh();
+        else location.reload();
+      }).catch(function (err) {
+        notifyError((err && err.message) || T('saveFail'));
+      }).finally(function () {
+        $btn.prop('disabled', false).text(T('save'));
+      });
     });
   }
 
