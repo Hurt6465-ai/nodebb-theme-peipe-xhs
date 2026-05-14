@@ -22,10 +22,319 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   let resizeTimer = 0;
   let pageDomObserver = null;
 
+
+  const PROFILE_ASSETS = Object.assign({
+    cssUrl: '/plugins/nodebb-theme-harmony/peipe-profile/peipe-profile.css',
+    i18nBaseUrl: '/plugins/nodebb-theme-harmony/peipe-profile/i18n/',
+    i18nDefault: 'zh-CN',
+    imageConfig: {
+      maxSide: 1080,
+      maxSizeMB: 0.09,
+      quality: 0.58,
+      minCompressBytes: 70 * 1024,
+      useWebp: true,
+      qualities: [0.58, 0.50, 0.44, 0.38, 0.32, 0.26, 0.22]
+    },
+    avatarImageConfig: {
+      maxSide: 512,
+      maxSizeMB: 0.06,
+      quality: 0.56,
+      minCompressBytes: 45 * 1024,
+      useWebp: true,
+      qualities: [0.56, 0.48, 0.40, 0.34, 0.28, 0.22]
+    }
+  }, window.PEIPE_PROFILE_CONFIG || {});
+
+  let profileText = {};
+  let profileI18nPromise = null;
+  let profileAssetsReady = false;
+  let uploadCompressionInstalled = false;
+
+  // Start hiding early when this script loads on a mobile user page.
+  if (window.innerWidth <= MOBILE_MAX && /^\/user\//.test(location.pathname || '')) {
+    document.body.classList.remove('xhs-profile-disabled');
+    document.body.classList.add('xhs-profile-booting');
+  }
+
+  function ensureExternalCss() {
+    if (document.querySelector('link[data-peipe-profile-css]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = rel(PROFILE_ASSETS.cssUrl);
+    link.setAttribute('data-peipe-profile-css', '1');
+    document.head.appendChild(link);
+  }
+
+  function getLocaleCandidates() {
+    const raw = String((window.config && window.config.userLang) || document.documentElement.lang || navigator.language || PROFILE_ASSETS.i18nDefault || 'zh-CN');
+    const short = raw.split('-')[0];
+    const out = [];
+    [raw, raw.replace('_', '-'), short, PROFILE_ASSETS.i18nDefault, 'zh-CN'].forEach(function (item) {
+      item = String(item || '').trim();
+      if (item && out.indexOf(item) === -1) out.push(item);
+    });
+    return out;
+  }
+
+  function loadProfileI18n() {
+    if (profileI18nPromise) return profileI18nPromise;
+    const candidates = getLocaleCandidates();
+    let chain = Promise.reject(new Error('start'));
+    candidates.forEach(function (locale) {
+      chain = chain.catch(function () {
+        return fetch(rel(PROFILE_ASSETS.i18nBaseUrl + locale + '.json'), { credentials: 'same-origin', cache: 'force-cache' })
+          .then(function (res) { if (!res.ok) throw new Error('i18n ' + res.status); return res.json(); });
+      });
+    });
+    profileI18nPromise = chain.then(function (json) {
+      profileText = json || {};
+      profileAssetsReady = true;
+      return profileText;
+    }).catch(function (err) {
+      console.warn('[peipe-profile] i18n load failed', err);
+      profileText = window.PEIPE_PROFILE_TEXT || {};
+      profileAssetsReady = true;
+      return profileText;
+    });
+    return profileI18nPromise;
+  }
+
+  function T(key, vars) {
+    let value = profileText && profileText[key];
+    if (!value && window.PEIPE_PROFILE_TEXT) value = window.PEIPE_PROFILE_TEXT[key];
+    value = value || key;
+    if (vars) {
+      Object.keys(vars).forEach(function (name) {
+        value = String(value).replace(new RegExp('\\{\\{' + name + '\\}\\}', 'g'), vars[name]);
+      });
+    }
+    return value;
+  }
+
+  function toastProfile(text) {
+    try {
+      const body = document.body;
+      body.classList.add('xhs-profile-uploading');
+      body.setAttribute('data-xhs-uploading-text', text || T('uploading'));
+      clearTimeout(body._xhsUploadToastTimer);
+      body._xhsUploadToastTimer = setTimeout(function () {
+        body.classList.remove('xhs-profile-uploading');
+        body.removeAttribute('data-xhs-uploading-text');
+      }, 1800);
+    } catch (e) {}
+  }
+
+  function fileExt(file) {
+    const name = String(file && file.name || '').toLowerCase();
+    const m = name.match(/\.([a-z0-9]+)$/);
+    return m ? m[1] : '';
+  }
+
+  function isCompressibleImage(file) {
+    if (!file) return false;
+    const type = String(file.type || '').toLowerCase();
+    const ext = fileExt(file);
+    if (/gif|svg|heic|heif/i.test(type) || /^(gif|svg|heic|heif)$/i.test(ext)) return false;
+    if (/^image\//i.test(type)) return true;
+    return /^(jpg|jpeg|png|webp)$/i.test(ext);
+  }
+
+  function canEncode(type) {
+    return new Promise(function (resolve) {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        if (!canvas.toBlob) return resolve(false);
+        canvas.toBlob(function (blob) { resolve(!!blob && blob.type === type); }, type, 0.8);
+      } catch (e) { resolve(false); }
+    });
+  }
+
+  function imageTargetBytes(cfg) {
+    return Math.max(28 * 1024, Math.round(Number(cfg.maxSizeMB || 0.09) * 1024 * 1024));
+  }
+
+  function extForMime(type) {
+    type = String(type || '').toLowerCase();
+    if (type === 'image/webp') return '.webp';
+    if (type === 'image/png') return '.png';
+    return '.jpg';
+  }
+
+  function loadImageFromFile(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file) return reject(new Error('empty file'));
+      function fallback() {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = function () {
+          URL.revokeObjectURL(url);
+          resolve({
+            width: img.naturalWidth || img.width,
+            height: img.naturalHeight || img.height,
+            draw: function (ctx, w, h) { ctx.drawImage(img, 0, 0, w, h); },
+            close: function () {}
+          });
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode failed')); };
+        img.src = url;
+      }
+      if (window.createImageBitmap) {
+        window.createImageBitmap(file).then(function (bitmap) {
+          resolve({
+            width: bitmap.width,
+            height: bitmap.height,
+            draw: function (ctx, w, h) { ctx.drawImage(bitmap, 0, 0, w, h); },
+            close: function () { try { bitmap.close && bitmap.close(); } catch (e) {} }
+          });
+        }).catch(fallback);
+      } else {
+        fallback();
+      }
+    });
+  }
+
+  function canvasToBlob(canvas, type, quality) {
+    return new Promise(function (resolve) { canvas.toBlob(resolve, type, quality); });
+  }
+
+  function makeCompressedFile(original, blob, type) {
+    if (!blob || !blob.size) return original;
+    const base = String(original && original.name || ('image-' + Date.now())).replace(/\.[^.]+$/, '');
+    try { return new File([blob], base + extForMime(type), { type: type, lastModified: Date.now() }); }
+    catch (e) { blob.name = base + extForMime(type); return blob; }
+  }
+
+  function compressImageFile(file, cfg) {
+    cfg = Object.assign({}, PROFILE_ASSETS.imageConfig, cfg || {});
+    if (!isCompressibleImage(file)) return Promise.resolve(file);
+    if (Number(file.size || 0) > 0 && Number(file.size || 0) < Number(cfg.minCompressBytes || 0)) return Promise.resolve(file);
+
+    return canEncode('image/webp').then(function (webp) {
+      const type = cfg.useWebp && webp ? 'image/webp' : 'image/jpeg';
+      const targetBytes = imageTargetBytes(cfg);
+      return loadImageFromFile(file).then(function (img) {
+        const w = img.width || 1;
+        const h = img.height || 1;
+        const maxSide = Number(cfg.maxSide || 1080);
+        const scale = Math.min(1, maxSide / Math.max(w, h));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx || !canvas.toBlob) return file;
+        img.draw(ctx, canvas.width, canvas.height);
+        img.close && img.close();
+
+        const qualities = Array.isArray(cfg.qualities) && cfg.qualities.length ? cfg.qualities : [cfg.quality || 0.58, 0.50, 0.44, 0.38, 0.32, 0.26, 0.22];
+        let best = null;
+        let chain = Promise.resolve();
+        qualities.forEach(function (q) {
+          chain = chain.then(function () {
+            if (best && best.size <= targetBytes) return best;
+            return canvasToBlob(canvas, type, Number(q)).then(function (blob) {
+              if (blob && blob.size) best = blob;
+              return best;
+            });
+          });
+        });
+        return chain.then(function () {
+          if (!best || !best.size) return file;
+          if (Number(file.size || 0) && best.size >= Number(file.size || 0) * 0.98) return file;
+          return makeCompressedFile(file, best, type);
+        });
+      });
+    }).catch(function (err) {
+      console.warn('[peipe-profile] image compression skipped', err);
+      return file;
+    });
+  }
+
+  function shouldUseAvatarConfig(url) {
+    const s = String(url || '').toLowerCase();
+    return /avatar|picture|profile|user/.test(s);
+  }
+
+  function cloneAndCompressFormData(fd, url) {
+    if (!fd || fd.__xhsProfileCompressed) return Promise.resolve(fd);
+    const cfg = shouldUseAvatarConfig(url) ? PROFILE_ASSETS.avatarImageConfig : PROFILE_ASSETS.imageConfig;
+    const next = new FormData();
+    const tasks = [];
+    fd.forEach(function (value, key) {
+      if (value instanceof File && isCompressibleImage(value)) {
+        tasks.push(compressImageFile(value, cfg).then(function (compressed) {
+          next.append(key, compressed, compressed.name || value.name || 'image.jpg');
+        }));
+      } else if (value instanceof Blob && value.type && /^image\//i.test(value.type)) {
+        tasks.push(compressImageFile(value, cfg).then(function (compressed) {
+          next.append(key, compressed, compressed.name || 'image.jpg');
+        }));
+      } else {
+        next.append(key, value);
+      }
+    });
+    return Promise.all(tasks).then(function () {
+      try { Object.defineProperty(next, '__xhsProfileCompressed', { value: true }); } catch (e) { next.__xhsProfileCompressed = true; }
+      return next;
+    });
+  }
+
+  function installUploadCompressionPatch() {
+    if (uploadCompressionInstalled) return;
+    uploadCompressionInstalled = true;
+
+    if (window.fetch && !window.fetch.__xhsProfileCompressionPatched) {
+      const rawFetch = window.fetch;
+      const patchedFetch = function (input, init) {
+        init = init || {};
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (init.body instanceof FormData) {
+          toastProfile(T('compressing'));
+          return cloneAndCompressFormData(init.body, url).then(function (body) {
+            init.body = body;
+            toastProfile(T('uploading'));
+            return rawFetch.call(this, input, init);
+          }).catch(function () {
+            return rawFetch.call(this, input, init);
+          });
+        }
+        return rawFetch.apply(this, arguments);
+      };
+      patchedFetch.__xhsProfileCompressionPatched = true;
+      window.fetch = patchedFetch;
+    }
+
+    if (window.XMLHttpRequest && !window.XMLHttpRequest.prototype.__xhsProfileCompressionPatched) {
+      const rawOpen = window.XMLHttpRequest.prototype.open;
+      const rawSend = window.XMLHttpRequest.prototype.send;
+      window.XMLHttpRequest.prototype.open = function (method, url) {
+        this.__xhsProfileUploadUrl = url;
+        return rawOpen.apply(this, arguments);
+      };
+      window.XMLHttpRequest.prototype.send = function (body) {
+        if (body instanceof FormData && !body.__xhsProfileCompressed) {
+          const xhr = this;
+          toastProfile(T('compressing'));
+          cloneAndCompressFormData(body, xhr.__xhsProfileUploadUrl || '').then(function (nextBody) {
+            toastProfile(T('uploading'));
+            rawSend.call(xhr, nextBody);
+          }).catch(function () {
+            rawSend.call(xhr, body);
+          });
+          return;
+        }
+        return rawSend.apply(this, arguments);
+      };
+      window.XMLHttpRequest.prototype.__xhsProfileCompressionPatched = true;
+    }
+  }
+
   $(window).on('action:ajaxify.end', function () {
     if (!isAccountPage()) {
       cleanupInjected();
       restoreGlobalUI();
+      document.body.classList.add('xhs-profile-disabled');
       return;
     }
     scheduleInit();
@@ -72,14 +381,21 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     if (window.innerWidth > MOBILE_MAX) {
       cleanupInjected();
       restoreGlobalUI();
+      document.body.classList.add('xhs-profile-disabled');
       return;
     }
 
     if (!isAccountPage()) {
       cleanupInjected();
       restoreGlobalUI();
+      document.body.classList.add('xhs-profile-disabled');
       return;
     }
+
+    ensureExternalCss();
+    installUploadCompressionPatch();
+    document.body.classList.remove('xhs-profile-disabled');
+    document.body.classList.add('xhs-profile-booting');
 
     // NodeBB ajaxify 在手机 Chrome / Kiwi 下有时先触发 action:ajaxify.end，
     // 后把 .account 真实 DOM 塞进 #content。原版只等约 1 秒，慢网下会错过，
@@ -135,6 +451,9 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
       if (tries < MAX_INIT_RETRIES) {
         initRaf = requestAnimationFrame(attempt);
+      } else {
+        document.body.classList.remove('xhs-profile-booting');
+        document.body.classList.add('xhs-profile-disabled');
       }
     }
 
@@ -143,12 +462,14 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       const host = document.getElementById('content') || document.querySelector('main#panel') || document.body;
       pageDomObserver = new MutationObserver(function () {
         const found = findAccountAndTop();
-        if (found) boot(found);
+        if (found && profileAssetsReady) boot(found);
       });
       pageDomObserver.observe(host, { childList: true, subtree: true });
     }
 
-    initRaf = requestAnimationFrame(attempt);
+    loadProfileI18n().finally(function () {
+      initRaf = requestAnimationFrame(attempt);
+    });
   }
 
   function initXiaohongshuProfile($account, $top) {
@@ -158,12 +479,14 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     const dom = getDomCache($account, $top);
     if (!dom.$account.length || !dom.$top.length) return;
 
-    injectStyle();
+    ensureExternalCss();
     hideGlobalNavigation();
     hideOriginalElements(dom);
     buildProfileShell(dom);
     tweakContentArea(dom);
     bindGlobalEvents();
+    document.body.classList.add('xhs-profile-ready');
+    document.body.classList.remove('xhs-profile-booting', 'xhs-profile-disabled');
   }
 
   function cleanupInjected() {
@@ -200,7 +523,8 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     $('.sidebar-left, .sidebar-right').show();
     $('main#panel').css({ 'margin-top': '', 'padding-top': '' });
     $('.layout-container').css({ 'padding-bottom': '' });
-    $('body').removeClass('xhs-profile-active');
+    $('body').removeClass('xhs-profile-active xhs-profile-ready xhs-profile-booting');
+    $('body').addClass('xhs-profile-disabled');
   }
 
   function getDomCache($account, $top) {
@@ -509,7 +833,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     let uploadAvatarHtml = '';
     if (isOwnProfile()) {
       uploadAvatarHtml =
-        '<button type="button" class="xhs-avatar-upload-btn" id="xhsAvatarUploadBtn" aria-label="上传头像">' +
+        '<button type="button" class="xhs-avatar-upload-btn" id="xhsAvatarUploadBtn" aria-label="' + esc(T('uploadAvatar')) + '">' +
           '<i class="fa fa-camera"></i>' +
         '</button>';
     }
@@ -520,7 +844,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
     let genderAgeHtml = '';
     if (gender || age) {
-      const gaText = [gender, age ? age + '岁' : ''].filter(Boolean).join(' ');
+      const gaText = [gender, age ? age + T('ageSuffix') : ''].filter(Boolean).join(' ');
       genderAgeHtml = '<span class="xhs-gender-tag">' + esc(gaText) + '</span>';
     }
 
@@ -590,9 +914,9 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
   function buildStatsRow($header) {
     const slug = getViewedSlug();
     const stats = [
-      { num: getFollowingCount(), label: '关注', href: '/user/' + slug + '/following' },
-      { num: getFollowersCount(), label: '粉丝', href: '/user/' + slug + '/followers' },
-      { num: getViewsCount(), label: '浏览', href: '' }
+      { num: getFollowingCount(), label: T('followingCount'), href: '/user/' + slug + '/following' },
+      { num: getFollowersCount(), label: T('followers'), href: '/user/' + slug + '/followers' },
+      { num: getViewsCount(), label: T('views'), href: '' }
     ];
 
     const $row = $('<div id="xhs-stats-row" class="xhs-injected"></div>');
@@ -617,10 +941,10 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
     if (own) {
       if (editable) {
-        const $viewBtn = $('<a href="/user/' + getViewedSlug() + '" class="xhs-btn xhs-btn-outline xhs-btn-long">返回主页</a>');
+        const $viewBtn = $('<a href="/user/' + getViewedSlug() + '" class="xhs-btn xhs-btn-outline xhs-btn-long">' + esc(T('backHome')) + '</a>');
         $bar.append($viewBtn);
       } else {
-        const $editBtn = $('<a href="/user/' + getViewedSlug() + '/edit" class="xhs-btn xhs-btn-primary xhs-btn-long">编辑资料</a>');
+        const $editBtn = $('<a href="/user/' + getViewedSlug() + '/edit" class="xhs-btn xhs-btn-primary xhs-btn-long">' + esc(T('editProfile')) + '</a>');
         $bar.append($editBtn);
       }
     } else {
@@ -629,7 +953,7 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
       $bar.append($followSlot);
 
       if (dom.$chat.length) {
-        const $chatBtn = $('<button type="button" class="xhs-btn xhs-btn-outline xhs-btn-long">聊天</button>');
+        const $chatBtn = $('<button type="button" class="xhs-btn xhs-btn-outline xhs-btn-long">' + esc(T('chat')) + '</button>');
         $chatBtn.on('click', function (e) {
           e.preventDefault();
           dom.$chat.get(0).click();
@@ -646,31 +970,31 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     const admin = isAdminViewer();
     const $wrap = $('<div id="xhs-profile-topmenu" class="xhs-injected"></div>');
     const $menuWrap = $('<div class="xhs-menu-wrap xhs-topmenu-wrap"></div>');
-    const $btn = $('<button type="button" class="xhs-topmenu-btn" aria-label="更多"><i class="fa fa-ellipsis-h"></i></button>');
+    const $btn = $('<button type="button" class="xhs-topmenu-btn" aria-label="' + esc(T('more')) + '"><i class="fa fa-ellipsis-h"></i></button>');
     const $menu = $('<div class="xhs-dropdown-menu xhs-topmenu-dropdown" id="xhs-topmenu-dropdown"></div>');
 
     if (own) {
-      addMenuLink($menu, '/user/' + getViewedSlug() + '/settings', 'fa-gear', '设置');
-      addMenuLink($menu, '/user/' + getViewedSlug() + '/theme', 'fa-paint-brush', '主题设置');
+      addMenuLink($menu, '/user/' + getViewedSlug() + '/settings', 'fa-gear', T('settings'));
+      addMenuLink($menu, '/user/' + getViewedSlug() + '/theme', 'fa-paint-brush', T('themeSettings'));
       addMenuDivider($menu);
-      addMenuCustomAction($menu, 'fa-camera', '上传头像', function () {
+      addMenuCustomAction($menu, 'fa-camera', T('uploadAvatar'), function () {
         triggerAvatarUpload(dom);
       });
-      addMenuAction($menu, dom.$coverUpload, 'fa-image', '上传背景');
-      addMenuAction($menu, dom.$coverResize, 'fa-arrows-alt', '调整背景');
-      addMenuAction($menu, dom.$coverRemove, 'fa-trash', '移除背景');
+      addMenuAction($menu, dom.$coverUpload, 'fa-image', T('uploadCover'));
+      addMenuAction($menu, dom.$coverResize, 'fa-arrows-alt', T('resizeCover'));
+      addMenuAction($menu, dom.$coverRemove, 'fa-trash', T('removeCover'));
     } else {
       if (admin) {
-        addMenuLink($menu, '/user/' + getViewedSlug() + '/info', 'fa-id-card', '账号信息');
-        addMenuMirrorButtons($menu, dom.$mute, dom.$unmute, 'fa-volume-xmark', '禁言账号', '解除禁言');
-        addMenuMirrorButtons($menu, dom.$ban, dom.$unban, 'fa-ban', '封禁账户', '解除封禁');
-        addMenuAction($menu, dom.$deleteAccount, 'fa-trash', '删除账号');
-        addMenuAction($menu, dom.$deleteContent, 'fa-eraser', '删除内容');
-        addMenuAction($menu, dom.$deleteAll, 'fa-bomb', '删号和内容');
+        addMenuLink($menu, '/user/' + getViewedSlug() + '/info', 'fa-id-card', T('accountInfo'));
+        addMenuMirrorButtons($menu, dom.$mute, dom.$unmute, 'fa-volume-xmark', T('muteAccount'), T('unmuteAccount'));
+        addMenuMirrorButtons($menu, dom.$ban, dom.$unban, 'fa-ban', T('banAccount'), T('unbanAccount'));
+        addMenuAction($menu, dom.$deleteAccount, 'fa-trash', T('deleteAccount'));
+        addMenuAction($menu, dom.$deleteContent, 'fa-eraser', T('deleteContent'));
+        addMenuAction($menu, dom.$deleteAll, 'fa-bomb', T('deleteAll'));
         addMenuDivider($menu);
       }
-      addMenuMirrorButtons($menu, dom.$flag, dom.$alreadyFlagged, 'fa-flag', '举报资料', '已举报');
-      addMenuMirrorButtons($menu, dom.$block, dom.$unblock, 'fa-eye-slash', '屏蔽用户', '解除屏蔽');
+      addMenuMirrorButtons($menu, dom.$flag, dom.$alreadyFlagged, 'fa-flag', T('reportProfile'), T('reported'));
+      addMenuMirrorButtons($menu, dom.$block, dom.$unblock, 'fa-eye-slash', T('blockUser'), T('unblockUser'));
     }
 
     $btn.on('click', function (e) {
@@ -689,8 +1013,8 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
     const slug = getViewedSlug();
     const section = getCurrentSection();
     const primaryTabs = [
-      { key: 'about', label: '主页', href: '/user/' + slug },
-      { key: 'topics', label: '笔记', href: '/user/' + slug + '/topics' }
+      { key: 'about', label: T('review'), href: '/user/' + slug },
+      { key: 'topics', label: T('notes'), href: '/user/' + slug + '/topics' }
     ];
 
     const $nav = $('<div id="xhs-tab-nav" class="xhs-injected"></div>');
@@ -718,19 +1042,19 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
       let $btn = null;
       if (!followHidden && $follow.length) {
-        $btn = $('<button type="button" class="xhs-btn xhs-btn-primary xhs-btn-long">关注</button>');
+        $btn = $('<button type="button" class="xhs-btn xhs-btn-primary xhs-btn-long">' + esc(T('follow')) + '</button>');
         $btn.on('click', function (e) {
           e.preventDefault();
           $follow.get(0).click();
         });
       } else if (!unfollowHidden && $unfollow.length) {
-        $btn = $('<button type="button" class="xhs-btn xhs-btn-outline-muted xhs-btn-long">已关注</button>');
+        $btn = $('<button type="button" class="xhs-btn xhs-btn-outline-muted xhs-btn-long">' + esc(T('following')) + '</button>');
         $btn.on('click', function (e) {
           e.preventDefault();
           $unfollow.get(0).click();
         });
       } else if ($follow.length) {
-        $btn = $('<button type="button" class="xhs-btn xhs-btn-primary xhs-btn-long">关注</button>');
+        $btn = $('<button type="button" class="xhs-btn xhs-btn-primary xhs-btn-long">' + esc(T('follow')) + '</button>');
         $btn.on('click', function (e) {
           e.preventDefault();
           $follow.get(0).click();
@@ -919,569 +1243,5 @@ if (typeof URL !== 'undefined' && typeof URL.canParse !== 'function') {
 
   function cssUrlEscape(url) {
     return String(url || '').replace(/[\\"\n\r\f]/g, '\\$&');
-  }
-
-  function injectStyle() {
-    if (document.getElementById('xhs-profile-style-v11')) return;
-
-    $('head').append(`
-<style id="xhs-profile-style-v11">
-@media (max-width: 768px) {
-  body.xhs-profile-active {
-    overflow-x: hidden !important;
-    background: #fff !important;
-  }
-
-  body.xhs-profile-active [component="bottombar"] {
-    display: none !important;
-  }
-
-  body.xhs-profile-active .sidebar-left,
-  body.xhs-profile-active .sidebar-right {
-    display: none !important;
-  }
-
-  body.xhs-profile-active main#panel {
-    margin-top: 0 !important;
-    padding-top: 0 !important;
-  }
-
-  body.xhs-profile-active .layout-container {
-    padding-bottom: 0 !important;
-  }
-
-  body.xhs-profile-active #content {
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-    max-width: 100% !important;
-  }
-
-  body.xhs-profile-active .account {
-    padding: 0 !important;
-    margin: 0 !important;
-    max-width: 100% !important;
-    overflow: visible !important;
-  }
-
-  .xhs-original-top-hidden,
-  .xhs-hidden {
-    display: none !important;
-  }
-
-  .xhs-cover-raw {
-    position: absolute !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    height: 0 !important;
-    overflow: hidden !important;
-  }
-
-  body.xhs-profile-active .fixed-bottom .navigator-mobile {
-    display: none !important;
-  }
-
-  #xhs-profile-shell {
-    position: relative;
-    z-index: 50;
-    background: #fff;
-  }
-
-  #xhs-profile-header {
-    position: relative;
-    width: 100%;
-    min-height: 340px;
-    overflow: visible;
-    background: #fff;
-    z-index: 160;
-  }
-
-  .xhs-cover {
-    width: 100%;
-    height: 340px;
-    background-size: cover;
-    background-position: center top;
-    background-repeat: no-repeat;
-    position: absolute;
-    inset: 0;
-  }
-
-  .xhs-cover-shade {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, rgba(0,0,0,0.12) 0%, rgba(0,0,0,0.26) 55%, rgba(0,0,0,0.58) 100%);
-    z-index: 1;
-  }
-
-  .xhs-header-overlay {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 16px;
-    z-index: 2;
-    padding: 0 16px;
-    overflow: visible;
-  }
-
-  #xhs-profile-header.xhs-no-bio .xhs-header-overlay {
-    bottom: 18px;
-  }
-
-  #xhs-profile-topmenu {
-    position: absolute;
-    top: 14px;
-    right: 14px;
-    z-index: 5000;
-    overflow: visible;
-  }
-
-  .xhs-topmenu-wrap {
-    position: relative;
-  }
-
-  .xhs-topmenu-btn {
-    width: 38px;
-    height: 38px;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.26);
-    background: rgba(0,0,0,0.26);
-    color: #fff;
-    backdrop-filter: blur(10px);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.18);
-  }
-
-  .xhs-topmenu-btn i {
-    font-size: 16px;
-  }
-
-  .xhs-user-main {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .xhs-avatar-wrap {
-    position: relative;
-    flex: 0 0 92px;
-    width: 92px;
-    min-width: 92px;
-    display: flex;
-    justify-content: flex-start;
-  }
-
-  .xhs-avatar-circle {
-    width: 92px;
-    height: 92px;
-    border-radius: 50%;
-    overflow: hidden;
-    border: 1.5px solid rgba(255,255,255,0.98);
-    box-shadow: 0 6px 18px rgba(0,0,0,0.18);
-    background: #f5f5f5;
-  }
-
-  .xhs-avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .xhs-avatar-fallback {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-size: 34px;
-    font-weight: 700;
-  }
-
-  .xhs-avatar-upload-btn {
-    position: absolute;
-    right: -2px;
-    bottom: 4px;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    border: 2px solid #fff;
-    background: #ff2442;
-    color: #fff;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 14px rgba(255,36,66,0.25);
-    padding: 0;
-    z-index: 3;
-  }
-
-  .xhs-avatar-flag {
-    position: absolute;
-    left: -1px;
-    bottom: 7px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    line-height: 1;
-    z-index: 4;
-    filter: drop-shadow(0 2px 5px rgba(0,0,0,0.24));
-    pointer-events: none;
-  }
-
-  .xhs-user-right {
-    min-width: 0;
-    flex: 1;
-    padding-top: 2px;
-  }
-
-  .xhs-name-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    flex-wrap: wrap;
-  }
-
-  .xhs-display-name {
-    font-size: 25px;
-    font-weight: 800;
-    color: #fff;
-    line-height: 1.18;
-    letter-spacing: -0.02em;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.46);
-    word-break: break-word;
-  }
-
-  .xhs-mm-name {
-    line-height: 1.36;
-    padding-top: 1px;
-  }
-
-  .xhs-gender-tag {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 22px;
-    padding: 0 8px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.22);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 800;
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.24);
-    text-shadow: 0 1px 3px rgba(0,0,0,0.28);
-  }
-
-  .xhs-language-line,
-  .xhs-country-line {
-    margin-top: 6px;
-    font-size: 13px;
-    color: #fff;
-    font-weight: 700;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.46);
-    line-height: 1.45;
-  }
-
-  .xhs-lang-part {
-    display: inline-block;
-    vertical-align: middle;
-  }
-
-  .xhs-lang-arrow {
-    display: inline-block;
-    vertical-align: middle;
-    margin: 0 4px;
-    font-size: 11px;
-    font-weight: 500;
-    opacity: 0.88;
-    transform: translateY(-0.5px);
-  }
-
-  .xhs-country-line {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .xhs-country-line i {
-    font-size: 12px;
-  }
-
-  .xhs-mm-text {
-    line-height: 1.72;
-    padding-top: 1px;
-  }
-
-  .xhs-bio {
-    margin-top: 12px;
-    max-width: 16em;
-    font-size: 13px;
-    line-height: 1.62;
-    color: #fff;
-    text-shadow: 0 1px 6px rgba(0,0,0,0.6);
-    word-break: break-word;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .xhs-mm-bio {
-    line-height: 1.92;
-    padding-top: 1px;
-  }
-
-  #xhs-stats-row {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 28px;
-    padding: 14px 0 0 0;
-  }
-
-  .xhs-stat-item {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    text-decoration: none !important;
-  }
-
-  .xhs-stat-num {
-    font-size: 21px;
-    font-weight: 800;
-    color: #fff;
-    line-height: 1;
-    text-shadow: 0 1px 5px rgba(0,0,0,0.35);
-  }
-
-  .xhs-stat-label {
-    font-size: 12px;
-    color: rgba(255,255,255,0.92);
-    font-weight: 700;
-    margin-top: 6px;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.35);
-  }
-
-  #xhs-action-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 14px 0 0 0;
-  }
-
-  .xhs-btn-slot {
-    display: flex;
-    min-width: 0;
-  }
-
-  .xhs-btn-long-slot {
-    flex: 1 1 auto;
-  }
-
-  .xhs-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 40px;
-    padding: 0 16px;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: 800;
-    border: none;
-    cursor: pointer;
-    text-decoration: none !important;
-    white-space: nowrap;
-    transition: all 0.18s ease;
-    line-height: 1;
-  }
-
-  .xhs-btn-long {
-    min-width: 112px;
-    flex: 1 1 auto;
-  }
-
-  .xhs-btn-primary {
-    background: #ff2442;
-    color: #fff !important;
-    box-shadow: 0 4px 12px rgba(255,36,66,0.22);
-  }
-
-  .xhs-btn-primary:active {
-    background: #e41d3a;
-    transform: translateY(1px);
-  }
-
-  .xhs-btn-outline {
-    background: rgba(0,0,0,0.28);
-    color: #fff !important;
-    border: 1px solid rgba(255,255,255,0.24);
-    backdrop-filter: blur(8px);
-  }
-
-  .xhs-btn-outline:active {
-    background: rgba(0,0,0,0.38);
-  }
-
-  .xhs-btn-outline-muted {
-    background: rgba(0,0,0,0.38);
-    color: rgba(255,255,255,0.86) !important;
-    border: 1px solid rgba(255,255,255,0.12);
-    backdrop-filter: blur(8px);
-  }
-
-  .xhs-menu-wrap {
-    position: relative;
-    flex: 0 0 auto;
-  }
-
-  .xhs-dropdown-menu {
-    position: absolute;
-    top: calc(100% + 10px);
-    right: 0;
-    min-width: 188px;
-    padding: 6px;
-    border-radius: 16px;
-    background: rgba(255,255,255,0.98);
-    box-shadow: 0 16px 36px rgba(0,0,0,0.18);
-    display: none;
-    z-index: 99999;
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(0,0,0,0.04);
-  }
-
-  .xhs-dropdown-menu.show {
-    display: block;
-  }
-
-  .xhs-menu-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 10px 12px;
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: 700;
-    color: #333 !important;
-    background: transparent;
-    border: none;
-    text-decoration: none !important;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .xhs-menu-item:active,
-  .xhs-menu-item.active {
-    background: #f5f5f5;
-  }
-
-  .xhs-menu-item i {
-    color: #8f8f8f;
-    font-size: 14px;
-    width: 18px;
-    text-align: center;
-    text-shadow: none;
-  }
-
-  .xhs-menu-divider {
-    height: 1px;
-    background: #f0f0f0;
-    margin: 6px 4px;
-  }
-
-  #xhs-tab-nav {
-    position: relative;
-    z-index: 35;
-    background: #fff;
-    padding: 14px 0 10px 0;
-    margin: 0;
-  }
-
-  .xhs-tab-scroll {
-    display: flex;
-    align-items: stretch;
-    justify-content: center;
-    gap: 14px;
-    padding: 0 16px;
-  }
-
-  .xhs-tab {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 76px;
-    height: 36px;
-    padding: 0 16px;
-    font-size: 15px;
-    font-weight: 700;
-    color: #7e7e7e !important;
-    text-decoration: none !important;
-    border: none;
-    border-radius: 999px;
-    background: #f7f7f7;
-    white-space: nowrap;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .xhs-tab.active {
-    color: #ff2442 !important;
-    background: #fff1f4;
-  }
-
-  body.xhs-profile-active .account-content {
-    padding: 16px 16px 88px 16px !important;
-    min-height: 30vh;
-    position: relative;
-    z-index: 1;
-    background: #fff;
-  }
-
-  body.xhs-profile-active .account-content > * {
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-  }
-
-  body.xhs-profile-active .account-stats.container {
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-  }
-
-  .xhs-about-card {
-    border: 1px solid #f0f0f0 !important;
-    border-radius: 14px !important;
-    box-shadow: none !important;
-    background: #fafafa !important;
-  }
-
-  body.xhs-profile-active .alert {
-    border-radius: 12px;
-    font-size: 14px;
-    margin-left: 0;
-    margin-right: 0;
-  }
-
-  body.xhs-profile-active .topics-list .topic-row,
-  body.xhs-profile-active .topics-list > li {
-    border-radius: 12px;
-    margin-bottom: 8px;
-  }
-
-  body.xhs-profile-active [data-widget-area="header"] {
-    display: none !important;
-  }
-
-  body.xhs-profile-active .xhs-account-layout {
-    flex-direction: column !important;
-  }
-}
-</style>
-    `);
   }
 })();
