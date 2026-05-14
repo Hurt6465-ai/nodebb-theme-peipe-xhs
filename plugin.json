@@ -1,21 +1,45 @@
 {
   "id": "nodebb-theme-peipe-xhs",
   "hooks": [
-    { "hook": "static:app.load", "method": "init" },
-    { "hook": "filter:admin.header.build", "method": "addAdminNavigation" },
-    { "hook": "filter:widgets.getAreas", "method": "defineWidgetAreas" },
-    { "hook": "filter:config.get", "method": "getThemeConfig" },
-    { "hook": "filter:settings.get", "method": "getAdminSettings" },
-    { "hook": "filter:user.saveSettings", "method": "saveUserSettings" },
-    { "hook": "filter:user.profileMenu", "method": "addProfileItem" },
-    { "hook": "filter:middleware.renderHeader", "method": "filterMiddlewareRenderHeader" }
+    {
+      "hook": "static:app.load",
+      "method": "init"
+    },
+    {
+      "hook": "filter:admin.header.build",
+      "method": "addAdminNavigation"
+    },
+    {
+      "hook": "filter:widgets.getAreas",
+      "method": "defineWidgetAreas"
+    },
+    {
+      "hook": "filter:config.get",
+      "method": "getThemeConfig"
+    },
+    {
+      "hook": "filter:settings.get",
+      "method": "getAdminSettings"
+    },
+    {
+      "hook": "filter:user.saveSettings",
+      "method": "saveUserSettings"
+    },
+    {
+      "hook": "filter:user.profileMenu",
+      "method": "addProfileItem"
+    },
+    {
+      "hook": "filter:middleware.renderHeader",
+      "method": "filterMiddlewareRenderHeader"
+    }
   ],
   "scripts": [
     "public/harmony.js",
-    "public/peipe-profile.js"
+    "public/peipe-xprofile-v19.js"
   ],
   "scss": [
-    "scss/peipe-profile.scss"
+    "scss/peipe-xprofile-v19.scss"
   ],
   "modules": {
     "../admin/plugins/harmony.js": "public/admin.js",
@@ -24,7 +48,8 @@
   "staticDirs": {
     "inter": "node_modules/@fontsource/inter/files",
     "poppins": "node_modules/@fontsource/poppins/files",
-    "peipe-profile": "public/peipe-profile"
+    "peipe-xprofile-v19": "public/peipe-xprofile-v19"
   },
-  "languages": "languages"
+  "languages": "languages",
+  "name": "Peipe XHS Theme"
 }
