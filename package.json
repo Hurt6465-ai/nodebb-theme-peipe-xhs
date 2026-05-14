@@ -8,8 +8,9 @@
   "main": "library.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/NodeBB/nodebb-theme-harmony"
+    "url": "https://github.com/Hurt6465-ai/nodebb-theme-peipe-xhs"
   },
+  "homepage": "https://github.com/Hurt6465-ai/nodebb-theme-peipe-xhs",
   "scripts": {
     "lint": "eslint .",
     "publish:patch": "npm version patch && npm run publish:common",
@@ -22,7 +23,9 @@
     "theme",
     "forum",
     "bootstrap",
-    "responsive"
+    "responsive",
+    "peipe",
+    "xhs"
   ],
   "contributors": [
     {
@@ -34,11 +37,16 @@
       "name": "Barış Soner Uşaklı",
       "email": "baris@nodebb.org",
       "url": "https://github.com/barisusakli"
+    },
+    {
+      "name": "hurt",
+      "email": "hurt6465@gmail.com",
+      "url": "https://github.com/Hurt6465-ai"
     }
   ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/NodeBB/nodebb-theme-harmony/issues"
+    "url": "https://github.com/Hurt6465-ai/nodebb-theme-peipe-xhs/issues"
   },
   "dependencies": {
     "@fontsource/inter": "5.2.8",
